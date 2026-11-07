@@ -15,6 +15,9 @@ import net.khoango.koder.llm.LlmException
 import net.khoango.koder.llm.Usage
 
 
+private const val SYSTEM_PROMPT =
+    "You are Koder, a helpful coding assistant running in the user's terminal. Be concise."
+
 class Koder: CliktCommand(name="koder") {
     private val prompt by argument().optional()
     private val model by option("--model", envvar = "KODER_MODEL").default("gemini-3.5-flash")
@@ -45,6 +48,14 @@ private suspend fun chatLoop(llm: LlmClient, firstPrompt: String? = null) {
         }
 
         if (input == "/exit") break
+
+        if (input == "/reset") {
+            history.clear()
+            sessionUsage = Usage.ZERO
+            println("Conversation cleared.")
+            input = null
+            continue
+        }
 
         if (input.isNotBlank()) {
             val request = Message.user(input)
