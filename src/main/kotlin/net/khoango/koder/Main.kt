@@ -10,6 +10,7 @@ import net.khoango.koder.llm.callLlm
 
 class Koder: CliktCommand(name="koder") {
     private val prompt by argument().optional()
+
     override fun run(): Unit = runBlocking {
         val apiKey = System.getenv("OPENROUTER_API_KEY") ?:
             throw PrintMessage("OPENROUTER_API_KEY is not set", statusCode = 1, printError = true)
