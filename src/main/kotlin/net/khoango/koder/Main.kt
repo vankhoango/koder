@@ -8,6 +8,7 @@ import com.github.ajalt.clikt.parameters.arguments.optional
 import com.github.ajalt.clikt.parameters.options.default
 import com.github.ajalt.clikt.parameters.options.option
 import kotlinx.coroutines.runBlocking
+import net.khoango.koder.domain.Message
 import net.khoango.koder.llm.LlmClient
 import net.khoango.koder.llm.LlmConfig
 import net.khoango.koder.llm.LlmException
@@ -31,7 +32,9 @@ class Koder: CliktCommand(name="koder") {
 }
 
 private suspend fun chatLoop(llm: LlmClient, firstPrompt: String? = null) {
+    val history = mutableListOf<Message>()
     var input = firstPrompt
+
     while (true) {
         if (input == null) {
             print("\n> ")
@@ -42,8 +45,9 @@ private suspend fun chatLoop(llm: LlmClient, firstPrompt: String? = null) {
         if (input == "/exit") break
 
         if (input.isNotBlank()) {
+            history += Message.user(input)
             try {
-                println(llm.send(input))
+                println(llm.send(history).text)
             } catch (e: LlmException) {
                 println("Error: ${e.message}")
             }

@@ -25,8 +25,7 @@ class LlmClient(private val config: LlmConfig): AutoCloseable {
         .apiKey(config.apiKey)
         .build()
 
-    suspend fun send(prompt: String): String {
-        val messages = listOf(Message.user(prompt))
+    suspend fun send(messages: List<Message>): Message {
 
         val params = ChatCompletionCreateParams.builder()
             .model(config.model)
@@ -35,7 +34,8 @@ class LlmClient(private val config: LlmConfig): AutoCloseable {
 
         try {
             val completion = client.async().chat().completions().create(params).await()
-            return completion.choices().firstOrNull()?.message()?.content()?.getOrNull() ?: ""
+            val response = completion.choices().firstOrNull()?.message()?.content()?.getOrNull() ?: ""
+            return Message.assistant(response)
         } catch (e: OpenAIServiceException) {
             throw LlmException("API error (HTTP ${e.statusCode()}): ${e.message}", e)
         } catch (e: OpenAIIoException) {
