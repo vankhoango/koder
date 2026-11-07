@@ -14,6 +14,8 @@ dependencies {
     implementation(libs.serialization.json)
     implementation(libs.coroutines.core)
     implementation(libs.clikt)
+    implementation(libs.openai)
+
     testImplementation(kotlin("test"))
 }
 
