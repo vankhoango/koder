@@ -45,9 +45,14 @@ private suspend fun chatLoop(llm: LlmClient, firstPrompt: String? = null) {
         if (input == "/exit") break
 
         if (input.isNotBlank()) {
-            history += Message.user(input)
+            val request = Message.user(input)
             try {
-                println(llm.send(history).text)
+                val response = llm.send(history + request)
+                println(response.text)
+                // The history only contains the complete exchanges.
+                // A message is added only after its request has succeeded.
+                history += request
+                history += response
             } catch (e: LlmException) {
                 println("Error: ${e.message}")
             }
