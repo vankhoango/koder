@@ -20,7 +20,7 @@ dependencies {
 kotlin { jvmToolchain(21) }
 
 application {
-    mainClass.set("dev.kode.koder.MainKt")
+    mainClass.set("net.khoango.koder.MainKt")
     applicationName = "Koder"
 }
 

@@ -1,16 +1,21 @@
-package net.khoango.koder.net.khoango.koder
+package net.khoango.koder
 
-//TIP To <b>Run</b> code, press <shortcut actionId="Run"/> or
-// click the <icon src="AllIcons.Actions.Execute"/> icon in the gutter.
-fun main() {
-    val name = "Kotlin"
-    //TIP Press <shortcut actionId="ShowIntentionActions"/> with your caret at the highlighted text
-    // to see how IntelliJ IDEA suggests fixing it.
-    println("Hello, " + name + "!")
+import com.github.ajalt.clikt.core.CliktCommand
+import com.github.ajalt.clikt.core.PrintMessage
+import com.github.ajalt.clikt.core.main
+import com.github.ajalt.clikt.parameters.arguments.argument
+import com.github.ajalt.clikt.parameters.arguments.optional
 
-    for (i in 1..5) {
-        //TIP Press <shortcut actionId="Debug"/> to start debugging your code. We have set one <icon src="AllIcons.Debugger.Db_set_breakpoint"/> breakpoint
-        // for you, but you can always add more by pressing <shortcut actionId="ToggleLineBreakpoint"/>.
-        println("i = $i")
+class Koder: CliktCommand(name="koder") {
+    private val prompt by argument().optional()
+    override fun run() {
+        val apiKey = System.getenv("OPENROUTER_API_KEY") ?:
+            throw PrintMessage("OPENROUTER_API_KEY is not set", statusCode = 1, printError = true)
+        echo("koder is ready (API key ${apiKey.length} chars)")
+        prompt?.let {
+            echo("You said: $it")
+        }
     }
 }
+
+fun main(args: Array<String>) = Koder().main(args)
