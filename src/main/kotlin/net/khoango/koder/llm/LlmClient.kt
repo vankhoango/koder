@@ -35,10 +35,11 @@ class LlmClient(private val config: LlmConfig): AutoCloseable {
         .apiKey(config.apiKey)
         .build()
 
-    suspend fun send(messages: List<Message>): LlmResponse {
+    suspend fun send(system: String, messages: List<Message>): LlmResponse {
 
         val params = ChatCompletionCreateParams.builder()
             .model(config.model)
+            .addSystemMessage(system)
             .messages(messages.map { it.toParams() })
             .build()
 
