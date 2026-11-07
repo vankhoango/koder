@@ -12,6 +12,7 @@ import net.khoango.koder.domain.Message
 import net.khoango.koder.llm.LlmClient
 import net.khoango.koder.llm.LlmConfig
 import net.khoango.koder.llm.LlmException
+import net.khoango.koder.llm.Usage
 
 
 class Koder: CliktCommand(name="koder") {
@@ -34,6 +35,7 @@ class Koder: CliktCommand(name="koder") {
 private suspend fun chatLoop(llm: LlmClient, firstPrompt: String? = null) {
     val history = mutableListOf<Message>()
     var input = firstPrompt
+    var sessionUsage  = Usage.ZERO
 
     while (true) {
         if (input == null) {
@@ -48,11 +50,14 @@ private suspend fun chatLoop(llm: LlmClient, firstPrompt: String? = null) {
             val request = Message.user(input)
             try {
                 val response = llm.send(history + request)
-                println(response.text)
                 // The history only contains the complete exchanges.
                 // A message is added only after its request has succeeded.
                 history += request
-                history += response
+                history += response.message
+                sessionUsage += response.usage
+
+                println(response.message.text)
+                println("[tokens: ${response.usage} | session: $sessionUsage]")
             } catch (e: LlmException) {
                 println("Error: ${e.message}")
             }

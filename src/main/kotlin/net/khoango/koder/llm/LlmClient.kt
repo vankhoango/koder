@@ -18,6 +18,16 @@ data class LlmConfig(val baseUrl: String, val apiKey: String, val model: String)
     override fun toString() = "LlmConfig(baseUrl=$baseUrl, model=$model, apiKey=***)"
 }
 
+data class Usage(val inputTokens: Long, val outputTokens: Long) {
+    operator fun plus(other: Usage) = Usage(inputTokens + other.inputTokens, outputTokens + other.outputTokens)
+    override fun toString() = "$inputTokens in, $outputTokens out"
+    companion object {
+        val ZERO = Usage(0L, 0L)
+    }
+}
+
+data class LlmResponse(val message: Message, val usage: Usage)
+
 class LlmClient(private val config: LlmConfig): AutoCloseable {
 
     private val client = OpenAIOkHttpClient.builder()
@@ -25,7 +35,7 @@ class LlmClient(private val config: LlmConfig): AutoCloseable {
         .apiKey(config.apiKey)
         .build()
 
-    suspend fun send(messages: List<Message>): Message {
+    suspend fun send(messages: List<Message>): LlmResponse {
 
         val params = ChatCompletionCreateParams.builder()
             .model(config.model)
@@ -35,7 +45,14 @@ class LlmClient(private val config: LlmConfig): AutoCloseable {
         try {
             val completion = client.async().chat().completions().create(params).await()
             val response = completion.choices().firstOrNull()?.message()?.content()?.getOrNull() ?: ""
-            return Message.assistant(response)
+            val usage = completion.usage().getOrNull()
+            return LlmResponse(
+                Message.assistant(response),
+                Usage (
+                    usage?.promptTokens() ?: 0L,
+                    usage?.completionTokens() ?: 0L
+                )
+            )
         } catch (e: OpenAIServiceException) {
             throw LlmException("API error (HTTP ${e.statusCode()}): ${e.message}", e)
         } catch (e: OpenAIIoException) {
