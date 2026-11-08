@@ -16,10 +16,11 @@ data class ToolDefinition(
 val readToolDefinition = ToolDefinition (
     name = "read_file",
     description = """
-        Read the contents of a text file in the current project.
-        Use this whenever you need to see a file before answering questions about it or changing it.
-        Never guess a file's contents; read it first.
-    """.trimIndent(),
+    Read the contents of a text file in the current project.
+    Use this whenever you need to see a file before answering questions about it or changing it.
+    Never guess a file's contents; read it first.
+    Files longer than 2000 lines are truncated, and binary files can't be read.
+""".trimIndent(),
     inputSchema = objectSchema {
         string("path",
             "Path to the file, relative to the project root, e.g. \"src/main/kotlin/Main.kt\".",
