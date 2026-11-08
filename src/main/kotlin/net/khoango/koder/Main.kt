@@ -13,6 +13,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import net.khoango.koder.domain.Message
+import net.khoango.koder.domain.Role
 import net.khoango.koder.domain.ToolDefinition
 import net.khoango.koder.domain.listToolDefinition
 import net.khoango.koder.domain.readToolDefinition
@@ -82,25 +83,35 @@ private suspend fun chatLoop(llm: LlmClient, firstPrompt: String? = null, regist
         if (input.isNotBlank()) {
             val userMessage = Message.user(input)
             try {
-                val response = llm.send(SYSTEM_PROMPT, history + userMessage, registry.definitions)
-                sessionUsage += response.usage
+                val turn = mutableListOf(userMessage)
 
-                if (response.message.text.isNotEmpty()) println(response.message.text)
+                val first = llm.send(SYSTEM_PROMPT, history + turn, registry.definitions)
+                sessionUsage += first.usage
+                turn += first.message
+                if (first.message.text.isNotEmpty()) println(first.message.text)
 
-                for (call in response.message.toolUses) {
-                    println("[tool call] ${call.name} ${call.input}")
-                    val result = registry.execute(call)
-                    val label = if (result.isError) "tool error" else "tool result"
-                    println("[$label] ${result.content.preview()}")
+                if (first.message.toolUses.isNotEmpty()) {
+                    val results = first.message.toolUses.map { call ->
+                        println("[tool call] ${call.name} ${call.input}")
+                        registry.execute(call).also { result ->
+                            val label = if (result.isError) "tool error" else "tool result"
+                            println("[$label] ${result.content.preview()}")
+                        }
+                    }
+                    turn += Message(Role.USER, results)
+
+                    val second = llm.send(SYSTEM_PROMPT, history + turn, registry.definitions)
+                    sessionUsage += second.usage
+                    turn += second.message
+                    if (second.message.text.isNotEmpty()) println(second.message.text)
                 }
 
-                if (response.message.toolUses.isEmpty()) {
-                    history += userMessage
-                    history += response.message
+                if (turn.last().toolUses.isEmpty()) {
+                    history += turn
                 } else {
-                    println("(Results aren't sent back to the model yet, so this exchange isn't saved.)")
+                    println("(The model wants to use more tools. That's Lesson 1.4, so this exchange isn't saved.)")
                 }
-                println("[tokens: ${response.usage} | session: $sessionUsage]")
+                println("[session: $sessionUsage]")
             } catch (e: LlmException) {
                 println("Error: ${e.message}")
             }

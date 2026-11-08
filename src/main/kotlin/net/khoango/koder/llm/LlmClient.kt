@@ -12,7 +12,9 @@ import com.openai.models.chat.completions.ChatCompletionCreateParams
 import com.openai.models.chat.completions.ChatCompletionFunctionTool
 import com.openai.models.chat.completions.ChatCompletionMessageFunctionToolCall
 import com.openai.models.chat.completions.ChatCompletionMessageParam
+import com.openai.models.chat.completions.ChatCompletionMessageToolCall
 import com.openai.models.chat.completions.ChatCompletionSystemMessageParam
+import com.openai.models.chat.completions.ChatCompletionToolMessageParam
 import com.openai.models.chat.completions.ChatCompletionUserMessageParam
 import kotlinx.coroutines.future.await
 import kotlinx.serialization.json.Json
@@ -62,7 +64,7 @@ class LlmClient(private val config: LlmConfig): AutoCloseable {
 
         val params = ChatCompletionCreateParams.builder()
             .model(config.model)
-            .messages(listOf(systemParam) + messages.map { it.toParams() })
+            .messages(listOf(systemParam) + messages.flatMap { it.toParams() })
             .apply {
                 tools.forEach { tool ->
                     addTool(tool.toSdkTool())
@@ -105,15 +107,6 @@ class LlmClient(private val config: LlmConfig): AutoCloseable {
     }
 
     override fun close() = client.close()
-}
-
-private fun Message.toParams(): ChatCompletionMessageParam = when (this.role) {
-    Role.USER -> ChatCompletionMessageParam.ofUser(
-        ChatCompletionUserMessageParam.builder().content(this.text).build(),
-    )
-    Role.ASSISTANT -> ChatCompletionMessageParam.ofAssistant(
-        ChatCompletionAssistantMessageParam.builder().content(this.text).build()
-    )
 }
 
 private fun JsonElement.toJavaValue(): Any? = when (this) {
@@ -163,3 +156,46 @@ private fun ChatCompletionMessageFunctionToolCall.toToolUse(): ContentBlock.Tool
         providerMetadata = _additionalProperties().toJsonObjectOrNull(),
     )
 }
+
+private fun Message.toParams(): List<ChatCompletionMessageParam> = when (role) {
+    Role.USER -> {
+        val results = content.filterIsInstance<ContentBlock.ToolResult>()
+        if (results.isNotEmpty()) {
+            results.map { it.toToolParam() }
+        } else {
+            listOf(ChatCompletionMessageParam.ofUser(ChatCompletionUserMessageParam.builder().content(text).build()))
+        }
+    }
+    Role.ASSISTANT -> listOf(ChatCompletionMessageParam.ofAssistant(toAssistantParam()))
+}
+
+private fun Message.toAssistantParam(): ChatCompletionAssistantMessageParam {
+    val builder = ChatCompletionAssistantMessageParam.builder()
+    if (text.isNotEmpty()) builder.content(text)
+    toolUses.forEach { builder.addToolCall(it.toSdkToolCall()) }
+    return builder.build()
+}
+
+private fun ContentBlock.ToolUse.toSdkToolCall(): ChatCompletionMessageToolCall {
+    val builder = ChatCompletionMessageFunctionToolCall.builder()
+        .id(id)
+        .function(
+            ChatCompletionMessageFunctionToolCall.Function.builder()
+                .name(name)
+                .arguments(input.toString())
+                .build()
+        )
+    // Send provider-specific data back exactly as we received it (e.g. Gemini's thought signature).
+    providerMetadata?.forEach { (key, value) ->
+        builder.putAdditionalProperty(key, JsonValue.from(value.toJavaValue()))
+    }
+    return ChatCompletionMessageToolCall.ofFunction(builder.build())
+}
+
+private fun ContentBlock.ToolResult.toToolParam(): ChatCompletionMessageParam =
+    ChatCompletionMessageParam.ofTool(
+        ChatCompletionToolMessageParam.builder()
+            .toolCallId(toolUseId)
+            .content(if (isError) "Error: $content" else content)
+            .build()
+    )
