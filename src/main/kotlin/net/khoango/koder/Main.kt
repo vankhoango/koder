@@ -65,14 +65,19 @@ private suspend fun chatLoop(llm: LlmClient, firstPrompt: String? = null) {
             val request = Message.user(input)
             try {
                 val response = llm.send(SYSTEM_PROMPT,history + request, TOOLS)
-                // The history only contains the complete exchanges.
-                // A message is added only after its request has succeeded.
-                history += request
-                history += response.message
                 sessionUsage += response.usage
 
-                println(response.message.text)
-                println("[tokens: ${response.usage} | session: $sessionUsage]")
+                if (response.message.text.isNotEmpty()) println(response.message.text)
+                response.message.toolUses.forEach { println("[tool call] ${it.name} ${it.input}") }
+
+                // The history only contains the complete exchanges.
+                // A message is added only after its request has succeeded.
+                if (response.message.toolUses.isEmpty()) {
+                    history += request
+                    history += response.message
+                } else {
+                    println("(Tools can't run yet, so this exchange isn't saved to the history.)")
+                }
             } catch (e: LlmException) {
                 println("Error: ${e.message}")
             }
