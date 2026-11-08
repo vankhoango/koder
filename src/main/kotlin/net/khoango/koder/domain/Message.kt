@@ -13,6 +13,13 @@ sealed interface ContentBlock {
         val input: JsonObject,
         val providerMetadata: JsonObject? = null,
     ): ContentBlock
+
+    data class ToolResult(
+        val toolUseId: String,
+        val toolName: String,
+        val content: String,
+        val isError: Boolean = false,
+    ) : ContentBlock
 }
 
 data class Message(val role: Role, val content: List<ContentBlock>) {

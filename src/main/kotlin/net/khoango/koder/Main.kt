@@ -21,6 +21,8 @@ import net.khoango.koder.llm.LlmConfig
 import net.khoango.koder.llm.LlmException
 import net.khoango.koder.llm.Usage
 import net.khoango.koder.tools.ReadFileTool
+import net.khoango.koder.tools.ToolRegistry
+import kotlin.collections.emptyList
 import kotlin.collections.emptyMap
 import kotlin.io.path.Path
 import kotlin.io.path.absolute
@@ -28,8 +30,6 @@ import kotlin.io.path.absolute
 
 private const val SYSTEM_PROMPT =
     "You are Koder, a helpful coding assistant running in the user's terminal. Be concise."
-
-private val TOOLS = listOf<ToolDefinition>(readToolDefinition, listToolDefinition)
 
 class Koder: CliktCommand(name="koder") {
     private val prompt by argument().optional()
@@ -43,15 +43,21 @@ class Koder: CliktCommand(name="koder") {
         val apiKey = System.getenv("KODER_API_KEY") ?:
             throw PrintMessage("KODER_API_KEY is not set", statusCode = 1, printError = true)
 
+        val projectRoot = Path("").absolute()
+        val registry = if (noTools) ToolRegistry(emptyList())
+            else ToolRegistry(listOf(
+                ReadFileTool(projectRoot)
+            ))
+
+
         val llmConfig = LlmConfig(baseUrl, apiKey, model)
-        val tools = if (noTools) emptyList<ToolDefinition>() else TOOLS
         LlmClient(llmConfig).use { client ->
-            chatLoop(client,  prompt, tools)
+            chatLoop(client,  prompt, registry)
         }
     }
 }
 
-private suspend fun chatLoop(llm: LlmClient, firstPrompt: String? = null, tools: List<ToolDefinition>) {
+private suspend fun chatLoop(llm: LlmClient, firstPrompt: String? = null, registry: ToolRegistry) {
     val history = mutableListOf<Message>()
     var input = firstPrompt
     var sessionUsage  = Usage.ZERO
@@ -74,22 +80,27 @@ private suspend fun chatLoop(llm: LlmClient, firstPrompt: String? = null, tools:
         }
 
         if (input.isNotBlank()) {
-            val request = Message.user(input)
+            val userMessage = Message.user(input)
             try {
-                val response = llm.send(SYSTEM_PROMPT,history + request, tools)
+                val response = llm.send(SYSTEM_PROMPT, history + userMessage, registry.definitions)
                 sessionUsage += response.usage
 
                 if (response.message.text.isNotEmpty()) println(response.message.text)
-                response.message.toolUses.forEach { println("[tool call] ${it.name} ${it.input}") }
 
-                // The history only contains the complete exchanges.
-                // A message is added only after its request has succeeded.
+                for (call in response.message.toolUses) {
+                    println("[tool call] ${call.name} ${call.input}")
+                    val result = registry.execute(call)
+                    val label = if (result.isError) "tool error" else "tool result"
+                    println("[$label] ${result.content.preview()}")
+                }
+
                 if (response.message.toolUses.isEmpty()) {
-                    history += request
+                    history += userMessage
                     history += response.message
                 } else {
-                    println("(Tools can't run yet, so this exchange isn't saved to the history.)")
+                    println("(Results aren't sent back to the model yet, so this exchange isn't saved.)")
                 }
+                println("[tokens: ${response.usage} | session: $sessionUsage]")
             } catch (e: LlmException) {
                 println("Error: ${e.message}")
             }
@@ -100,4 +111,9 @@ private suspend fun chatLoop(llm: LlmClient, firstPrompt: String? = null, tools:
 
 fun main(args: Array<String>) {
     Koder().main(args)
+}
+
+private fun String.preview(maxLength: Int = 200): String {
+    val oneLine = replace("\n", " ⏎ ")
+    return if (oneLine.length <= maxLength) oneLine else oneLine.take(maxLength) + "…"
 }

@@ -24,6 +24,7 @@ kotlin { jvmToolchain(21) }
 application {
     mainClass.set("net.khoango.koder.MainKt")
     applicationName = "Koder"
+    applicationDefaultJvmArgs = listOf("-Dstdout.encoding=UTF-8", "-Dstderr.encoding=UTF-8")
 }
 
 tasks.test { useJUnitPlatform() }
