@@ -11,6 +11,7 @@ import com.github.ajalt.clikt.parameters.options.option
 import kotlinx.coroutines.runBlocking
 import net.khoango.koder.domain.Message
 import net.khoango.koder.domain.ToolDefinition
+import net.khoango.koder.domain.listToolDefinition
 import net.khoango.koder.domain.readToolDefinition
 import net.khoango.koder.llm.LlmClient
 import net.khoango.koder.llm.LlmConfig
@@ -21,7 +22,7 @@ import net.khoango.koder.llm.Usage
 private const val SYSTEM_PROMPT =
     "You are Koder, a helpful coding assistant running in the user's terminal. Be concise."
 
-private val TOOLS = listOf<ToolDefinition>(readToolDefinition)
+private val TOOLS = listOf<ToolDefinition>(readToolDefinition, listToolDefinition)
 
 class Koder: CliktCommand(name="koder") {
     private val prompt by argument().optional()
