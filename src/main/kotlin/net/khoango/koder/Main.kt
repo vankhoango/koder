@@ -9,6 +9,8 @@ import com.github.ajalt.clikt.parameters.options.default
 import com.github.ajalt.clikt.parameters.options.option
 import kotlinx.coroutines.runBlocking
 import net.khoango.koder.domain.Message
+import net.khoango.koder.domain.ToolDefinition
+import net.khoango.koder.domain.readToolDefinition
 import net.khoango.koder.llm.LlmClient
 import net.khoango.koder.llm.LlmConfig
 import net.khoango.koder.llm.LlmException
@@ -17,6 +19,8 @@ import net.khoango.koder.llm.Usage
 
 private const val SYSTEM_PROMPT =
     "You are Koder, a helpful coding assistant running in the user's terminal. Be concise."
+
+private val TOOLS = listOf<ToolDefinition>(readToolDefinition)
 
 class Koder: CliktCommand(name="koder") {
     private val prompt by argument().optional()
@@ -60,7 +64,7 @@ private suspend fun chatLoop(llm: LlmClient, firstPrompt: String? = null) {
         if (input.isNotBlank()) {
             val request = Message.user(input)
             try {
-                val response = llm.send(SYSTEM_PROMPT,history + request)
+                val response = llm.send(SYSTEM_PROMPT,history + request, TOOLS)
                 // The history only contains the complete exchanges.
                 // A message is added only after its request has succeeded.
                 history += request
@@ -77,4 +81,6 @@ private suspend fun chatLoop(llm: LlmClient, firstPrompt: String? = null) {
     }
 }
 
-fun main(args: Array<String>) = Koder().main(args)
+fun main(args: Array<String>) {
+    Koder().main(args)
+}

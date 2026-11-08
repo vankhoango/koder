@@ -1,15 +1,30 @@
 package net.khoango.koder.llm
 
 import com.openai.client.okhttp.OpenAIOkHttpClient
+import com.openai.core.JsonValue
 import com.openai.errors.OpenAIIoException
 import com.openai.errors.OpenAIServiceException
+import com.openai.models.FunctionDefinition
+import com.openai.models.FunctionParameters
 import com.openai.models.chat.completions.ChatCompletionAssistantMessageParam
 import com.openai.models.chat.completions.ChatCompletionCreateParams
+import com.openai.models.chat.completions.ChatCompletionFunctionTool
 import com.openai.models.chat.completions.ChatCompletionMessageParam
+import com.openai.models.chat.completions.ChatCompletionSystemMessageParam
 import com.openai.models.chat.completions.ChatCompletionUserMessageParam
 import kotlinx.coroutines.future.await
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.double
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.longOrNull
 import net.khoango.koder.domain.Message
 import net.khoango.koder.domain.Role
+import net.khoango.koder.domain.ToolDefinition
 import kotlin.jvm.optionals.getOrNull
 
 class LlmException(message: String, cause: Throwable? = null) : Exception(message, cause)
@@ -35,12 +50,20 @@ class LlmClient(private val config: LlmConfig): AutoCloseable {
         .apiKey(config.apiKey)
         .build()
 
-    suspend fun send(system: String, messages: List<Message>): LlmResponse {
+    suspend fun send(system: String, messages: List<Message>, tools: List<ToolDefinition> = emptyList()): LlmResponse {
+
+        val systemParam = ChatCompletionMessageParam.ofSystem(
+            ChatCompletionSystemMessageParam.builder().content(system).build()
+        )
 
         val params = ChatCompletionCreateParams.builder()
             .model(config.model)
-            .addSystemMessage(system)
-            .messages(messages.map { it.toParams() })
+            .messages(listOf(systemParam) + messages.map { it.toParams() })
+            .apply {
+                tools.forEach { tool ->
+                    addTool(tool.toSdkTool())
+                }
+            }
             .build()
 
         try {
@@ -64,11 +87,38 @@ class LlmClient(private val config: LlmConfig): AutoCloseable {
     override fun close() = client.close()
 }
 
-fun Message.toParams(): ChatCompletionMessageParam = when (this.role) {
+private fun Message.toParams(): ChatCompletionMessageParam = when (this.role) {
     Role.USER -> ChatCompletionMessageParam.ofUser(
         ChatCompletionUserMessageParam.builder().content(this.text).build(),
     )
     Role.ASSISTANT -> ChatCompletionMessageParam.ofAssistant(
         ChatCompletionAssistantMessageParam.builder().content(this.text).build()
     )
+}
+
+private fun JsonElement.toJavaValue(): Any? = when (this) {
+    is JsonNull -> null
+    is JsonPrimitive -> if (isString) content else booleanOrNull ?: longOrNull ?: doubleOrNull ?: content
+    is JsonObject -> mapValues { (_, v) -> v.toJavaValue() }
+    is JsonArray -> map { it.toJavaValue() }
+}
+
+private fun JsonObject.toFuntionParameters(): FunctionParameters {
+    val builder = FunctionParameters.builder()
+    forEach { key, value ->
+        builder.putAdditionalProperty(key, JsonValue.from(value.toJavaValue()))
+    }
+    return builder.build()
+}
+
+private fun ToolDefinition.toSdkTool(): ChatCompletionFunctionTool {
+    return ChatCompletionFunctionTool.builder()
+        .function(
+            FunctionDefinition.builder()
+                .name(name)
+                .description(description)
+                .parameters(inputSchema.toFuntionParameters())
+                .build()
+        )
+        .build()
 }
