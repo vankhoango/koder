@@ -9,6 +9,9 @@ import com.github.ajalt.clikt.parameters.options.default
 import com.github.ajalt.clikt.parameters.options.flag
 import com.github.ajalt.clikt.parameters.options.option
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import net.khoango.koder.domain.Message
 import net.khoango.koder.domain.ToolDefinition
 import net.khoango.koder.domain.listToolDefinition
@@ -17,6 +20,10 @@ import net.khoango.koder.llm.LlmClient
 import net.khoango.koder.llm.LlmConfig
 import net.khoango.koder.llm.LlmException
 import net.khoango.koder.llm.Usage
+import net.khoango.koder.tools.ReadFileTool
+import kotlin.collections.emptyMap
+import kotlin.io.path.Path
+import kotlin.io.path.absolute
 
 
 private const val SYSTEM_PROMPT =
