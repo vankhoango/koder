@@ -16,18 +16,15 @@ class Agent (val llm: LlmClient, val tools: ToolRegistry, val systemPrompt: Stri
 
     suspend fun run(userInput: String) {
         val turn = mutableListOf(Message.user(userInput))
-        val first = send(turn)
 
-        if (first.toolUses.isNotEmpty()) {
-            turn += executeTools(first.toolUses)
-            send(turn)
+        var reply = send(turn)
+        while (reply.toolUses.isNotEmpty()) {
+            val toolResult = executeTools(reply.toolUses)
+            turn += toolResult
+            reply = send(turn)
         }
 
-        if (turn.last().toolUses.isEmpty()) {
-            history += turn
-        } else {
-            println("(The model wants to use more tools. That's the next step, so this exchange isn't saved.)")
-        }
+        history += turn
     }
 
     fun reset() {
