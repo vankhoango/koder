@@ -21,12 +21,15 @@ import net.khoango.koder.llm.LlmClient
 import net.khoango.koder.llm.LlmConfig
 import net.khoango.koder.llm.LlmException
 import net.khoango.koder.llm.Usage
+import net.khoango.koder.tools.ListFileTool
 import net.khoango.koder.tools.ReadFileTool
 import net.khoango.koder.tools.ToolRegistry
 import kotlin.collections.emptyList
 import kotlin.collections.emptyMap
 import kotlin.io.path.Path
 import kotlin.io.path.absolute
+import kotlin.io.path.listDirectoryEntries
+import kotlin.io.path.name
 
 
 private const val SYSTEM_PROMPT =
@@ -47,7 +50,8 @@ class Koder: CliktCommand(name="koder") {
         val projectRoot = Path("").absolute()
         val registry = if (noTools) ToolRegistry(emptyList())
             else ToolRegistry(listOf(
-                ReadFileTool(projectRoot)
+                ReadFileTool(projectRoot),
+                ListFileTool(projectRoot),
             ))
 
 
