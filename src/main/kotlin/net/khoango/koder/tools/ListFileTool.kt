@@ -36,6 +36,7 @@ class ListFileTool(private val projectRoot: Path): Tool {
         if (!path.exists()) return failure("Directory not found: '$path'.")
         if (!path.isDirectory()) return failure("'$path' is not a directory.")
 
+        //TODO Consider an ignore list
         val fileList = path.listDirectoryEntries().map {
             val relativePath = projectRoot.relativize(it).invariantSeparatorsPathString
             if (it.isDirectory()) "$relativePath/" else relativePath

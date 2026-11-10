@@ -19,12 +19,15 @@ import net.khoango.koder.llm.LlmException
 import net.khoango.koder.tools.ListFileTool
 import net.khoango.koder.tools.ReadFileTool
 import net.khoango.koder.tools.ToolRegistry
+import net.khoango.koder.tools.WriteFileTool
 import kotlin.io.path.Path
 import kotlin.io.path.absolute
 
 
-private const val SYSTEM_PROMPT =
-    "You are Koder, a helpful coding assistant running in the user's terminal. Be concise."
+private var SYSTEM_PROMPT = """
+    You are Koder, a helpful coding assistant running in the user's terminal. Be concise.
+    If the user gives you an exact file path, use it directly; only explore with list_files when you don't know where something is.
+    """.trimIndent()
 
 class Koder: CliktCommand(name="koder") {
     private val prompt by argument().optional()
@@ -51,6 +54,7 @@ class Koder: CliktCommand(name="koder") {
             else ToolRegistry(listOf(
                 ReadFileTool(projectRoot),
                 ListFileTool(projectRoot),
+                WriteFileTool(projectRoot),
             ))
 
 
