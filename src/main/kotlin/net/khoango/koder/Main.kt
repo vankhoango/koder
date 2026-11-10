@@ -12,6 +12,7 @@ import com.github.ajalt.clikt.parameters.types.int
 import com.github.ajalt.clikt.parameters.types.restrictTo
 import kotlinx.coroutines.runBlocking
 import net.khoango.koder.agent.Agent
+import net.khoango.koder.agent.AgentEvent
 import net.khoango.koder.llm.LlmClient
 import net.khoango.koder.llm.LlmConfig
 import net.khoango.koder.llm.LlmException
@@ -55,7 +56,7 @@ class Koder: CliktCommand(name="koder") {
 
         val llmConfig = LlmConfig(baseUrl, apiKey, model)
         LlmClient(llmConfig).use { client ->
-            val agent = Agent(client, registry, SYSTEM_PROMPT, maxSteps)
+            val agent = Agent(client, registry, SYSTEM_PROMPT, maxSteps, ::printEvent)
             chatLoop(agent, prompt)
         }
     }
@@ -91,6 +92,22 @@ private suspend fun chatLoop(agent: Agent, firstPrompt: String? = null) {
 
         input = null
     }
+}
+
+private fun printEvent(event: AgentEvent) = when (event) {
+    is AgentEvent.AssistantText -> println(event.text)
+    is AgentEvent.ToolCalled -> println("[tool call] ${event.call.name} ${event.call.input}")
+    is AgentEvent.ToolFinished -> {
+        val label = if (event.result.isError) "tool error" else "tool result"
+        println("[$label] ${event.result.content.preview()}")
+    }
+    is AgentEvent.StepLimitReached -> println("[step limit of ${event.maxSteps} reached]")
+    AgentEvent.Abandoned -> println("(Stopped: the model kept requesting tools after the limit. This exchange isn't saved.)")
+}
+
+private fun String.preview(maxLength: Int = 200): String {
+    val oneLine = replace("\n", " ⏎ ")
+    return if (oneLine.length <= maxLength) oneLine else oneLine.take(maxLength) + "…"
 }
 
 fun main(args: Array<String>) {

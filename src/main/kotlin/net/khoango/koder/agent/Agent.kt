@@ -12,7 +12,8 @@ class Agent (
     private val tools: ToolRegistry,
     private val systemPrompt: String,
     private val maxSteps: Int = 25,
-) {
+    private val onEvent: (AgentEvent) -> Unit = {},
+    ) {
 
     private val history = mutableListOf<Message>()
 
@@ -33,11 +34,11 @@ class Agent (
         }
 
         if (reply.toolUses.isNotEmpty()) {
-            println("[step limit of $maxSteps reached]")
+            onEvent(AgentEvent.StepLimitReached(steps))
             turn += refuseTools(reply.toolUses)
             reply = send(turn)
             if (reply.toolUses.isNotEmpty()) {
-                println("(Stopped: the model kept requesting tools after the limit. This exchange isn't saved.)")
+                onEvent(AgentEvent.Abandoned)
                 return
             }
         }
@@ -69,24 +70,19 @@ class Agent (
         usage += response.usage
         turn += response.message
         if (response.message.text.isNotEmpty()) {
-            println(response.message.text)
+            onEvent(AgentEvent.AssistantText(response.message.text))
         }
         return response.message
     }
 
     private suspend fun executeTools(calls: List<ContentBlock.ToolUse>): Message {
         val results = calls.map { call ->
-            println("[Tool call] ${call.name} ${call.input}")
+            onEvent(AgentEvent.ToolCalled(call))
             tools.execute(call).also { result ->
-                val label = if (result.isError) "tool error" else "tool result"
-                println("[$label] ${result.content.preview()}")
+                onEvent(AgentEvent.ToolFinished(result))
             }
         }
         return Message(Role.USER, results)
     }
 }
 
-private fun String.preview(maxLength: Int = 200): String {
-    val oneLine = replace("\n", " ⏎ ")
-    return if (oneLine.length <= maxLength) oneLine else oneLine.take(maxLength) + "…"
-}
