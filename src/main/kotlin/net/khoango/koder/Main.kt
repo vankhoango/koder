@@ -8,6 +8,8 @@ import com.github.ajalt.clikt.parameters.arguments.optional
 import com.github.ajalt.clikt.parameters.options.default
 import com.github.ajalt.clikt.parameters.options.flag
 import com.github.ajalt.clikt.parameters.options.option
+import com.github.ajalt.clikt.parameters.types.int
+import com.github.ajalt.clikt.parameters.types.restrictTo
 import kotlinx.coroutines.runBlocking
 import net.khoango.koder.agent.Agent
 import net.khoango.koder.llm.LlmClient
@@ -34,6 +36,11 @@ class Koder: CliktCommand(name="koder") {
 
     private val noTools by option("--no-tools", help = "Don't advertise any tools to the model").flag()
 
+    private val maxSteps by option("--max-steps", help = "Maximum tool steps per request")
+        .int()
+        .restrictTo(1..100)
+        .default(25)
+
     override fun run(): Unit = runBlocking {
         val apiKey = System.getenv("KODER_API_KEY") ?:
             throw PrintMessage("KODER_API_KEY is not set", statusCode = 1, printError = true)
@@ -48,7 +55,7 @@ class Koder: CliktCommand(name="koder") {
 
         val llmConfig = LlmConfig(baseUrl, apiKey, model)
         LlmClient(llmConfig).use { client ->
-            val agent = Agent(client, registry, SYSTEM_PROMPT)
+            val agent = Agent(client, registry, SYSTEM_PROMPT, maxSteps)
             chatLoop(agent, prompt)
         }
     }

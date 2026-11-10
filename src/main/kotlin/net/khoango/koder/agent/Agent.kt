@@ -7,7 +7,12 @@ import net.khoango.koder.llm.LlmClient
 import net.khoango.koder.llm.Usage
 import net.khoango.koder.tools.ToolRegistry
 
-class Agent (val llm: LlmClient, val tools: ToolRegistry, val systemPrompt: String) {
+class Agent (
+    private val llm: LlmClient,
+    private val tools: ToolRegistry,
+    private val systemPrompt: String,
+    private val maxSteps: Int = 25,
+) {
 
     private val history = mutableListOf<Message>()
 
@@ -18,14 +23,41 @@ class Agent (val llm: LlmClient, val tools: ToolRegistry, val systemPrompt: Stri
         val turn = mutableListOf(Message.user(userInput))
 
         var reply = send(turn)
-        while (reply.toolUses.isNotEmpty()) {
+        var steps = 0
+
+        while (reply.toolUses.isNotEmpty() && steps < maxSteps) {
             val toolResult = executeTools(reply.toolUses)
             turn += toolResult
+            steps++
             reply = send(turn)
+        }
+
+        if (reply.toolUses.isNotEmpty()) {
+            println("[step limit of $maxSteps reached]")
+            turn += refuseTools(reply.toolUses)
+            reply = send(turn)
+            if (reply.toolUses.isNotEmpty()) {
+                println("(Stopped: the model kept requesting tools after the limit. This exchange isn't saved.)")
+                return
+            }
         }
 
         history += turn
     }
+
+    private fun refuseTools(calls: List<ContentBlock.ToolUse>): Message =
+        Message(
+            Role.USER,
+            calls.map { call ->
+                ContentBlock.ToolResult(
+                    toolUseId = call.id,
+                    toolName = call.name,
+                    content = "Not executed: the limit of $maxSteps tool steps for this request was reached. " +
+                            "Don't call any more tools. Summarize what you found so far, and tell the user what remains to be done.",
+                    isError = true,
+                )
+            },
+        )
 
     fun reset() {
         history.clear()
