@@ -10,6 +10,7 @@ import java.nio.file.Path
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.isDirectory
+import kotlin.io.path.readBytes
 
 val writeFileDefinition = ToolDefinition(
     name = "write_file",
@@ -50,16 +51,28 @@ class WriteFileTool(private val projectRoot: Path, private val fileTracker: File
         if (file.isDirectory()) return failure("'$path' is a directory, not a file.")
 
         val existed = file.exists()
-        if (existed && !fileTracker.isKnown(file)) {
-            return failure(
-                "'$path' already exists, and you haven't read it completely in this conversation. " +
-                        "Read it with read_file first, then write the complete new content."
-            )
+        if (existed) {
+            val fileStatus = fileTracker.statusOf(file, file.readBytes())
+            when (fileStatus) {
+                FileStatus.NOT_READ ->
+                    return failure(
+                        "'$path' already exists, and you haven't read it completely in this conversation. " +
+                                "Read it with read_file first, then write the complete new content."
+                    )
+                FileStatus.CHANGED ->
+                    return failure(
+                        "'$path' has changed since you last read it, probably edited by the user or another program. " +
+                                "Read it again with read_file, then write the complete new content, keeping those changes."
+                    )
+                FileStatus.UP_TO_DATE -> Unit
+            }
         }
 
         return try {
             file.parent?.createDirectories()
             writeAtomically(file, content)
+            fileTracker.markKnown(file, content.toByteArray())
+
             val lines = content.lines().size
             ToolOutput(if (existed) "Replaced '$path' ($lines lines)." else "Created '$path' ($lines lines).")
         } catch (e: IOException) {

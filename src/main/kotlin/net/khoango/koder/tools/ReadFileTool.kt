@@ -43,7 +43,7 @@ class ReadFileTool(private val projectRoot: Path, private val fileTracker: FileT
 
         val lines = bytes.toString(Charsets.UTF_8).lines()
         if (lines.size <= MAX_LINES) {
-            fileTracker.markKnown(file)
+            fileTracker.markKnown(file, bytes)
             return ToolOutput(lines.joinToString("\n"))
         }
 

@@ -1,16 +1,32 @@
 package net.khoango.koder.tools
 
 import java.nio.file.Path
+import java.security.MessageDigest
+import java.util.HexFormat
+
+enum class FileStatus {
+    NOT_READ,
+    CHANGED,
+    UP_TO_DATE,
+}
 
 class FileTracker {
 
-    private val knownFiles = mutableSetOf<Path>()
+    private val fingerprints = mutableMapOf<Path, String>()
 
-    fun markKnown(path: Path) {
-        knownFiles.add(path)
+    fun markKnown(path: Path, content: ByteArray) {
+        fingerprints[path] = fingerprint(content)
     }
 
-    fun isKnown(path: Path) = path in knownFiles
+    fun statusOf(path: Path, content: ByteArray): FileStatus {
+        val known = fingerprints[path] ?: return FileStatus.NOT_READ
+        return if (known == fingerprint(content)) FileStatus.UP_TO_DATE else FileStatus.CHANGED
+    }
 
-    fun clearKnown() = knownFiles.clear()
+    fun isKnown(path: Path) = path in fingerprints
+
+    fun clearKnown() = fingerprints.clear()
+
+    private fun fingerprint(content: ByteArray): String =
+        HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(content))
 }
