@@ -17,4 +17,8 @@ interface Tool {
     suspend fun execute(input: JsonObject): ToolOutput
 }
 
+/** Formats a count with a word in singular or plural, e.g. "1 line", "3 lines". */
+internal fun Int.pluralize(word: String): String =
+    if (this == 1) "$this $word" else "$this ${word}s"
+
 

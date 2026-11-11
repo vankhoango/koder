@@ -48,7 +48,6 @@ class EditFileTool(
 
     private fun edit(path: String, file: Path, oldString: String, newString: String): ToolOutput {
         if (oldString.isEmpty()) return failure("old_string must not be empty. To create a new file, use write_file.")
-        if (oldString == newString) return failure("old_string and new_string are identical, so nothing would change.")
         if (!file.exists()) return failure("File not found: '$path'. To create a new file, use write_file.")
         if (file.isDirectory()) return failure("'$path' is a directory, not a file.")
 
@@ -56,12 +55,19 @@ class EditFileTool(
             val bytes = file.readBytes()
             tracker.refusalFor(path, file, bytes)?.let { return it }
 
-            val text = bytes.toString(Charsets.UTF_8)
-            val count = text.countOccurrences(oldString)
+            val original = bytes.toString(Charsets.UTF_8)              // changed: was `text`
+            val lineEnding = LineEnding.detect(original)               // new: remember the file's style
+            val text = original.normalizeLineEndings()                 // new: \r\n → \n
+            val old = oldString.normalizeLineEndings()                 // new
+            val new = newString.normalizeLineEndings()                 // new
+
+            if (old == new) return failure("old_string and new_string are identical, so nothing would change.")   // moved here
+
+            val count = text.countOccurrences(old)                     // changed: `old`, not `oldString`
             if (count == 0) return failure("old_string was not found in '$path'.")
             if (count > 1) return failure("old_string appears $count times in '$path'. It must appear exactly once.")
 
-            val updated = text.replaceFirst(oldString, newString)
+            val updated = lineEnding.applyTo(text.replaceFirst(old, new))   // changed: normalized strings, then back to the file's style
             writeAtomically(file, updated)
             tracker.markKnown(file, updated.toByteArray())
 
@@ -70,6 +76,7 @@ class EditFileTool(
             failure("Could not edit '$path': ${e::class.simpleName} ${e.message}")
         }
     }
+
 }
 
 /** Counts non-overlapping occurrences of [sub] in this string. */

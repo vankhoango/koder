@@ -50,22 +50,25 @@ class WriteFileTool(private val projectRoot: Path, private val fileTracker: File
     private fun write(path: String, file: Path, content: String): ToolOutput {
         if (file.isDirectory()) return failure("'$path' is a directory, not a file.")
 
-        val existed = file.exists()
-        if (existed) {
-            fileTracker.refusalFor(path, file, file.readBytes())?.let {
-                return it
-            }
-        }
-
         return try {
-            file.parent?.createDirectories()
-            writeAtomically(file, content)
-            fileTracker.markKnown(file, content.toByteArray())
+            val existing = if (file.exists()) file.readBytes() else null
+            if (existing != null) {
+                fileTracker.refusalFor(path, file, existing)?.let { return it }
+            }
 
-            val lines = content.lines().size
-            ToolOutput(if (existed) "Replaced '$path' ($lines lines)." else "Created '$path' ($lines lines).")
+            val lineEnding = existing?.let { LineEnding.detect(it.toString(Charsets.UTF_8)) } ?: LineEnding.LF
+            val finalContent = lineEnding.applyTo(content.normalizeLineEndings())
+
+            file.parent?.createDirectories()
+            writeAtomically(file, finalContent)
+            fileTracker.markKnown(file, finalContent.toByteArray())
+
+            val lines = content.normalizeLineEndings().removeSuffix("\n").lines().size
+            val action = if (existing != null) "Replaced" else "Created"
+            ToolOutput("$action '$path' (${lines.pluralize("line")}).")
         } catch (e: IOException) {
             failure("Could not write '$path': ${e::class.simpleName} ${e.message}")
         }
     }
+
 }
