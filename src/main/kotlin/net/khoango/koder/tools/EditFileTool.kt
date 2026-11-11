@@ -55,28 +55,44 @@ class EditFileTool(
             val bytes = file.readBytes()
             tracker.refusalFor(path, file, bytes)?.let { return it }
 
-            val original = bytes.toString(Charsets.UTF_8)              // changed: was `text`
-            val lineEnding = LineEnding.detect(original)               // new: remember the file's style
-            val text = original.normalizeLineEndings()                 // new: \r\n → \n
-            val old = oldString.normalizeLineEndings()                 // new
-            val new = newString.normalizeLineEndings()                 // new
+            val original = bytes.toString(Charsets.UTF_8)
+            val lineEnding = LineEnding.detect(original)
+            val text = original.normalizeLineEndings()
+            val old = oldString.normalizeLineEndings()
+            val new = newString.normalizeLineEndings()
 
-            if (old == new) return failure("old_string and new_string are identical, so nothing would change.")   // moved here
+            if (old == new) return failure("old_string and new_string are identical, so nothing would change.")
 
-            val count = text.countOccurrences(old)                     // changed: `old`, not `oldString`
-            if (count == 0) return failure("old_string was not found in '$path'.")
-            if (count > 1) return failure("old_string appears $count times in '$path'. It must appear exactly once.")
+            val matches = text.occurrenceLines(old)
+            if (matches.isEmpty()) return failure(notFoundMessage(path, text, old))
+            if (matches.size > 1) {
+                return failure(
+                    "old_string appears ${matches.size} times in '$path', at lines ${matches.toReadableList()}. " +
+                            "Include more surrounding text, such as the whole line or a neighboring line, " +
+                            "so that it matches exactly one place."
+                )
+            }
 
-            val updated = lineEnding.applyTo(text.replaceFirst(old, new))   // changed: normalized strings, then back to the file's style
+            val updated = lineEnding.applyTo(text.replaceFirst(old, new))
             writeAtomically(file, updated)
             tracker.markKnown(file, updated.toByteArray())
 
-            ToolOutput("Edited '$path'.")
+            ToolOutput("Edited '$path' at line ${matches.single()}.")
         } catch (e: IOException) {
             failure("Could not edit '$path': ${e::class.simpleName} ${e.message}")
         }
     }
 
+    private fun notFoundMessage(path: String, text: String, old: String): String {
+        val similar = findWithDifferentWhitespace(text, old)
+            ?: return "old_string was not found in '$path'. It must match the file's current content exactly, " +
+                    "including whitespace and line breaks. Copy the exact text from a read_file result rather than from memory."
+
+        val actual = text.lines().slice(similar).joinToString("\n")
+        return "old_string was not found exactly in '$path', but the same text with different whitespace or " +
+                "indentation exists at lines ${similar.first + 1}–${similar.last + 1}. The actual text is:\n$actual\n" +
+                "Use this exact text, including its whitespace, as old_string."
+    }
 }
 
 /** Counts non-overlapping occurrences of [sub] in this string. */
@@ -89,3 +105,37 @@ internal fun String.countOccurrences(sub: String): Int {
     }
     return count
 }
+
+/** Returns the 1-based line number of every non-overlapping occurrence of [sub]. */
+internal fun String.occurrenceLines(sub: String): List<Int> {
+    val lines = mutableListOf<Int>()
+    var index = indexOf(sub)
+    while (index >= 0) {
+        lines += lineNumberAt(index)
+        index = indexOf(sub, index + sub.length)
+    }
+    return lines
+}
+
+private fun String.lineNumberAt(index: Int): Int = (0 until index).count { this[it] == '\n' } + 1
+
+/**
+ * Looks for lines matching [old] when leading and trailing whitespace is ignored on each line.
+ * Returns the matching 0-based line indexes, or null if there is no such passage.
+ */
+private fun findWithDifferentWhitespace(text: String, old: String): IntRange? {
+    val fileLines = text.lines()
+    val oldLines = old.trim('\n').lines().map { it.trim() }
+    if (oldLines.all { it.isEmpty() } || oldLines.size > fileLines.size) return null
+
+    for (start in 0..fileLines.size - oldLines.size) {
+        if (oldLines.indices.all { fileLines[start + it].trim() == oldLines[it] }) {
+            return start until start + oldLines.size
+        }
+    }
+    return null
+}
+
+/** Formats numbers like "4", "1 and 4", or "1, 4 and 7". */
+private fun List<Int>.toReadableList(): String =
+    if (size == 1) "${first()}" else dropLast(1).joinToString(", ") + " and " + last()

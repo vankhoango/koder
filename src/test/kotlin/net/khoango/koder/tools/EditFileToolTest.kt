@@ -3,12 +3,14 @@ package net.khoango.koder.tools
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
 import kotlin.io.path.readText
 import kotlin.io.path.writeText
 import kotlin.test.BeforeTest
 import kotlin.test.Test
+import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 
@@ -54,5 +56,33 @@ class EditFileToolTest {
 
         assertFalse(second.isError, second.content)
         assertEquals("- Item one\r\n- Item two\r\n", file.readText())
+    }
+
+    @Test
+    fun `reports the line numbers of multiple matches`() {
+        val file = root.resolve("todo.md")
+        file.writeText("- Item 1\n- Item 2\n- Item 3\n- Remember: Item 1 is urgent\n")
+        call(read, "path" to "todo.md")
+
+        val output = call(edit, "path" to "todo.md", "old_string" to "Item 1", "new_string" to "Item one")
+
+        assertTrue(output.isError)
+        assertContains(output.content, "appears 2 times")
+        assertContains(output.content, "at lines 1 and 4")
+    }
+
+    @Test
+    fun `shows the actual text when only the indentation differs`() {
+        val file = root.resolve("App.kt")
+        file.writeText("fun main() {\n    println(\"Hi\")\n}\n")
+        call(read, "path" to "App.kt")
+
+        // The file uses four spaces; the model wrongly uses a tab.
+        val output = call(edit, "path" to "App.kt", "old_string" to "\tprintln(\"Hi\")", "new_string" to "\tprintln(\"Hello\")")
+
+        assertTrue(output.isError, output.content)
+        assertContains(output.content, "different whitespace or indentation")
+        assertContains(output.content, "at lines 2–2")
+        assertContains(output.content, "    println(\"Hi\")")
     }
 }
