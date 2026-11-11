@@ -52,8 +52,8 @@ class ObjectSchemaBuilder {
     fun string(name: String, description: String, required: Boolean = false) =
         property(name, "string", description, required)
 
-    fun integer(name: String, description: String, required: Boolean = false) =
-        property(name, "integer", description, required)
+    fun boolean(name: String, description: String, required: Boolean = false) =
+        property(name, "boolean", description, required)
 
     private fun property(name: String, type: String, description: String, required: Boolean) {
         properties[name] = buildJsonObject {

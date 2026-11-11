@@ -14,18 +14,24 @@ import kotlin.io.path.readBytes
 val editFileDefinition = ToolDefinition(
     name = "edit_file",
     description = """
-        Edit an existing file by replacing one exact piece of text with new text.
+        Edit an existing file by replacing an exact piece of text with new text.
         old_string must match the file's current content exactly, including whitespace, indentation,
-        and line breaks, and it must appear exactly once in the file. If it could appear more than once,
-        include a few surrounding lines to make it unique.
+        and line breaks. By default, it must appear exactly once in the file; if it could appear more
+        than once, include a few surrounding lines to make it unique.
+        To change every occurrence, for example to rename something throughout the file, set
+        replace_all to true. Make sure old_string doesn't also match text you don't want to change:
+        "Item 1" also matches the beginning of "Item 10".
         Prefer this over write_file for changing existing files, because only the changed part is sent.
         You must read the file with read_file in this conversation before editing it.
         To create a new file, use write_file.
+        Keep old_string as short as possible while still unique: usually one line, or a few lines.
+        Never use the whole file as old_string; use write_file to replace a whole file.
     """.trimIndent(),
     inputSchema = objectSchema {
         string("path", "Path to the file, relative to the project root.", required = true)
-        string("old_string", "The exact text to replace. It must appear exactly once in the file.", required = true)
+        string("old_string", "The exact text to replace.", required = true)
         string("new_string", "The text to replace it with. Use an empty string to delete old_string.", required = true)
+        boolean("replace_all", "Replace every occurrence of old_string instead of exactly one. Defaults to false.")
     },
 )
 
@@ -40,13 +46,14 @@ class EditFileTool(
         val path = input.stringParam("path") ?: return failure("Missing required parameter: path")
         val oldString = input.stringParam("old_string") ?: return failure("Missing required parameter: old_string")
         val newString = input.stringParam("new_string") ?: return failure("Missing required parameter: new_string")
+        val replaceAll = input.booleanParam("replace_all") ?: false
         val file = projectRoot.resolveInside(path)
             ?: return failure("'$path' is outside the project. Use a path relative to the project root.")
 
-        return withContext(Dispatchers.IO) { edit(path, file, oldString, newString) }
+        return withContext(Dispatchers.IO) { edit(path, file, oldString, newString, replaceAll) }
     }
 
-    private fun edit(path: String, file: Path, oldString: String, newString: String): ToolOutput {
+    private fun edit(path: String, file: Path, oldString: String, newString: String, replaceAll: Boolean): ToolOutput {
         if (oldString.isEmpty()) return failure("old_string must not be empty. To create a new file, use write_file.")
         if (!file.exists()) return failure("File not found: '$path'. To create a new file, use write_file.")
         if (file.isDirectory()) return failure("'$path' is a directory, not a file.")
@@ -65,19 +72,25 @@ class EditFileTool(
 
             val matches = text.occurrenceLines(old)
             if (matches.isEmpty()) return failure(notFoundMessage(path, text, old))
-            if (matches.size > 1) {
+            if (matches.size > 1 && !replaceAll) {
                 return failure(
                     "old_string appears ${matches.size} times in '$path', at lines ${matches.toReadableList()}. " +
-                            "Include more surrounding text, such as the whole line or a neighboring line, " +
-                            "so that it matches exactly one place."
+                            "Include more surrounding text so that it matches exactly one place, " +
+                            "or set replace_all to true to change every occurrence."
                 )
             }
 
-            val updated = lineEnding.applyTo(text.replaceFirst(old, new))
+            val replaced = if (replaceAll) text.replace(old, new) else text.replaceFirst(old, new)
+            val updated = lineEnding.applyTo(replaced)
             writeAtomically(file, updated)
             tracker.markKnown(file, updated.toByteArray())
 
-            ToolOutput("Edited '$path' at line ${matches.single()}.")
+            val message = if (matches.size == 1) {
+                "Edited '$path' at line ${matches.single()}."
+            } else {
+                "Replaced ${matches.size} occurrences in '$path', at lines ${matches.toReadableList()}."
+            }
+            ToolOutput(message)
         } catch (e: IOException) {
             failure("Could not edit '$path': ${e::class.simpleName} ${e.message}")
         }

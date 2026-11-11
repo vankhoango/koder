@@ -2,6 +2,7 @@ package net.khoango.koder.tools
 
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import net.khoango.koder.domain.ToolDefinition
 
@@ -11,6 +12,9 @@ fun failure(message: String) = ToolOutput(message, isError = true)
 
 internal fun JsonObject.stringParam(name: String): String? =
     (this[name] as? JsonPrimitive)?.contentOrNull
+
+internal fun JsonObject.booleanParam(name: String): Boolean? =
+    (this[name] as? JsonPrimitive)?.booleanOrNull
 
 interface Tool {
     val definition: ToolDefinition

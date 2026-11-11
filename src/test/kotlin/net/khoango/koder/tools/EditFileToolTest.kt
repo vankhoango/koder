@@ -29,8 +29,15 @@ class EditFileToolTest {
         edit = EditFileTool(root, tracker)
     }
 
-    private fun call(tool: Tool, vararg params: Pair<String, String>): ToolOutput = runBlocking {
-        tool.execute(buildJsonObject { params.forEach { (key, value) -> put(key, value) } })
+    private fun call(tool: Tool, vararg params: Pair<String, Any>): ToolOutput = runBlocking {
+        tool.execute(buildJsonObject {
+            params.forEach { (key, value) ->
+                when (value) {
+                    is Boolean -> put(key, value)
+                    else -> put(key, value.toString())
+                }
+            }
+        })
     }
 
     @Test
@@ -84,5 +91,33 @@ class EditFileToolTest {
         assertContains(output.content, "different whitespace or indentation")
         assertContains(output.content, "at lines 2–2")
         assertContains(output.content, "    println(\"Hi\")")
+    }
+
+    @Test
+    fun `replaces every occurrence when replace_all is true`() {
+        val file = root.resolve("todo.md")
+        file.writeText("- Item 1\n- Item 2\n- Remember: Item 1 is urgent\n")
+        call(read, "path" to "todo.md")
+
+        val output = call(
+            edit, "path" to "todo.md", "old_string" to "Item 1", "new_string" to "Item one", "replace_all" to true,
+        )
+
+        assertFalse(output.isError, output.content)
+        assertContains(output.content, "at lines 1 and 3")
+        assertEquals("- Item one\n- Item 2\n- Remember: Item one is urgent\n", file.readText())
+    }
+
+    @Test
+    fun `suggests replace_all when there are several matches`() {
+        val file = root.resolve("todo.md")
+        file.writeText("- Item 1\n- Item 1 again\n")
+        call(read, "path" to "todo.md")
+
+        val output = call(edit, "path" to "todo.md", "old_string" to "Item 1", "new_string" to "Item one")
+
+        assertTrue(output.isError, output.content)
+        assertContains(output.content, "replace_all")
+        assertEquals("- Item 1\n- Item 1 again\n", file.readText())
     }
 }
