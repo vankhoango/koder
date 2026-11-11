@@ -52,19 +52,8 @@ class WriteFileTool(private val projectRoot: Path, private val fileTracker: File
 
         val existed = file.exists()
         if (existed) {
-            val fileStatus = fileTracker.statusOf(file, file.readBytes())
-            when (fileStatus) {
-                FileStatus.NOT_READ ->
-                    return failure(
-                        "'$path' already exists, and you haven't read it completely in this conversation. " +
-                                "Read it with read_file first, then write the complete new content."
-                    )
-                FileStatus.CHANGED ->
-                    return failure(
-                        "'$path' has changed since you last read it, probably edited by the user or another program. " +
-                                "Read it again with read_file, then write the complete new content, keeping those changes."
-                    )
-                FileStatus.UP_TO_DATE -> Unit
+            fileTracker.refusalFor(path, file, file.readBytes())?.let {
+                return it
             }
         }
 

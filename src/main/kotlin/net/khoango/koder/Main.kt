@@ -16,6 +16,7 @@ import net.khoango.koder.agent.AgentEvent
 import net.khoango.koder.llm.LlmClient
 import net.khoango.koder.llm.LlmConfig
 import net.khoango.koder.llm.LlmException
+import net.khoango.koder.tools.EditFileTool
 import net.khoango.koder.tools.FileTracker
 import net.khoango.koder.tools.ListFileTool
 import net.khoango.koder.tools.ReadFileTool
@@ -57,6 +58,7 @@ class Koder: CliktCommand(name="koder") {
                 ReadFileTool(projectRoot, fileTracker),
                 ListFileTool(projectRoot),
                 WriteFileTool(projectRoot, fileTracker),
+                EditFileTool(projectRoot, fileTracker),
             ))
 
 
