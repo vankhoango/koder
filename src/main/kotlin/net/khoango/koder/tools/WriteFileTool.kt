@@ -17,7 +17,7 @@ val writeFileDefinition = ToolDefinition(
         Create a new file, or completely replace the contents of an existing file, in the current project.
         Always provide the complete file content; anything you leave out will be lost.
         Missing parent directories are created automatically.
-        Before replacing an existing file, read it with read_file so you don't lose anything important.
+        An existing file can only be replaced after you've read it completely with read_file in this conversation.
     """.trimIndent(),
     inputSchema = objectSchema {
         string(
@@ -29,7 +29,7 @@ val writeFileDefinition = ToolDefinition(
     },
 )
 
-class WriteFileTool(private val projectRoot: Path) : Tool {
+class WriteFileTool(private val projectRoot: Path, private val fileTracker: FileTracker) : Tool {
 
     override val definition = writeFileDefinition
 
@@ -50,6 +50,13 @@ class WriteFileTool(private val projectRoot: Path) : Tool {
         if (file.isDirectory()) return failure("'$path' is a directory, not a file.")
 
         val existed = file.exists()
+        if (existed && !fileTracker.isKnown(file)) {
+            return failure(
+                "'$path' already exists, and you haven't read it completely in this conversation. " +
+                        "Read it with read_file first, then write the complete new content."
+            )
+        }
+
         return try {
             file.parent?.createDirectories()
             writeAtomically(file, content)

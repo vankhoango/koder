@@ -16,6 +16,7 @@ import net.khoango.koder.agent.AgentEvent
 import net.khoango.koder.llm.LlmClient
 import net.khoango.koder.llm.LlmConfig
 import net.khoango.koder.llm.LlmException
+import net.khoango.koder.tools.FileTracker
 import net.khoango.koder.tools.ListFileTool
 import net.khoango.koder.tools.ReadFileTool
 import net.khoango.koder.tools.ToolRegistry
@@ -50,23 +51,24 @@ class Koder: CliktCommand(name="koder") {
             throw PrintMessage("KODER_API_KEY is not set", statusCode = 1, printError = true)
 
         val projectRoot = Path("").absolute()
+        val fileTracker = FileTracker()
         val registry = if (noTools) ToolRegistry(emptyList())
             else ToolRegistry(listOf(
-                ReadFileTool(projectRoot),
+                ReadFileTool(projectRoot, fileTracker),
                 ListFileTool(projectRoot),
-                WriteFileTool(projectRoot),
+                WriteFileTool(projectRoot, fileTracker),
             ))
 
 
         val llmConfig = LlmConfig(baseUrl, apiKey, model)
         LlmClient(llmConfig).use { client ->
             val agent = Agent(client, registry, SYSTEM_PROMPT, maxSteps, ::printEvent)
-            chatLoop(agent, prompt)
+            chatLoop(agent, prompt, fileTracker)
         }
     }
 }
 
-private suspend fun chatLoop(agent: Agent, firstPrompt: String? = null) {
+private suspend fun chatLoop(agent: Agent, firstPrompt: String? = null, fileTracker: FileTracker) {
     var input = firstPrompt
     while (true) {
         if (input == null) {
@@ -79,6 +81,7 @@ private suspend fun chatLoop(agent: Agent, firstPrompt: String? = null) {
             "/quit" -> break
             "/reset" -> {
                 agent.reset()
+                fileTracker.clearKnown()
                 println("Conversation cleared")
                 input = null
                 continue

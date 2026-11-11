@@ -15,7 +15,7 @@ import kotlin.io.path.isDirectory
 import kotlin.io.path.readBytes
 import kotlin.io.path.readText
 
-class ReadFileTool(private val projectRoot: Path): Tool {
+class ReadFileTool(private val projectRoot: Path, private val fileTracker: FileTracker): Tool {
 
     override val definition: ToolDefinition = readToolDefinition
 
@@ -42,7 +42,10 @@ class ReadFileTool(private val projectRoot: Path): Tool {
         if (bytes.contains(0)) return failure("'$path' appears to be a binary file and can't be shown as text.")
 
         val lines = bytes.toString(Charsets.UTF_8).lines()
-        if (lines.size <= MAX_LINES) return ToolOutput(lines.joinToString("\n"))
+        if (lines.size <= MAX_LINES) {
+            fileTracker.markKnown(file)
+            return ToolOutput(lines.joinToString("\n"))
+        }
 
         return ToolOutput(
             lines.take(MAX_LINES).joinToString("\n") +

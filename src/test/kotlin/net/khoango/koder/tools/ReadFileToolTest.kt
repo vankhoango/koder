@@ -27,7 +27,7 @@ class ReadFileToolTest {
     @BeforeTest
     fun setUp() {
         root = tempDir.resolve("project").createDirectories()
-        tool = ReadFileTool(root)
+        tool = ReadFileTool(root, FileTracker())
     }
 
     private fun read(path: String): ToolOutput = runBlocking {
