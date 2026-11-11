@@ -10,7 +10,6 @@ import java.nio.file.Path
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.isDirectory
-import kotlin.io.path.writeText
 
 val writeFileDefinition = ToolDefinition(
     name = "write_file",
@@ -53,7 +52,7 @@ class WriteFileTool(private val projectRoot: Path) : Tool {
         val existed = file.exists()
         return try {
             file.parent?.createDirectories()
-            file.writeText(content)
+            writeAtomically(file, content)
             val lines = content.lines().size
             ToolOutput(if (existed) "Replaced '$path' ($lines lines)." else "Created '$path' ($lines lines).")
         } catch (e: IOException) {
