@@ -18,6 +18,7 @@ import net.khoango.koder.llm.LlmConfig
 import net.khoango.koder.llm.LlmException
 import net.khoango.koder.tools.EditFileTool
 import net.khoango.koder.tools.FileTracker
+import net.khoango.koder.tools.FindFilesTool
 import net.khoango.koder.tools.ListFileTool
 import net.khoango.koder.tools.ReadFileTool
 import net.khoango.koder.tools.RunCommandTool
@@ -31,6 +32,7 @@ import kotlin.time.Duration.Companion.seconds
 private var SYSTEM_PROMPT = """
     You are Koder, a helpful coding assistant running in the user's terminal. Be concise.
     If the user gives you an exact file path, use it directly; only explore with list_files when you don't know where something is.
+    Before using tools, check whether the conversation already contains the answer.
     """.trimIndent()
 
 private fun askApproval(command: String): Boolean {
@@ -68,6 +70,7 @@ class Koder: CliktCommand(name="koder") {
                 WriteFileTool(projectRoot, fileTracker),
                 EditFileTool(projectRoot, fileTracker),
                 RunCommandTool(projectRoot, approve = { askApproval(it) }),
+                FindFilesTool(projectRoot),
             ))
 
 

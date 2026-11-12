@@ -28,23 +28,6 @@ val readToolDefinition = ToolDefinition (
     },
 )
 
-val listToolDefinition = ToolDefinition (
-    name = "list_files",
-    description = """
-        List the files and subdirectories in a directory of the current project.
-        Directory names end with "/". The listing is not recursive: call this tool again
-        on a subdirectory to see what it contains.
-        Use this to explore the project's structure, and to find the exact path of a file
-        before calling read_file. Never guess a path; list the directory first if you're unsure.
-    """.trimIndent(),
-    inputSchema = objectSchema {
-        string("path",
-            "Directory to list, relative to the project root, e.g. \"src/main\". " +
-                    "Omit it to list the project root.",
-            false)
-    }
-)
-
 class ObjectSchemaBuilder {
     private val properties = mutableMapOf<String, JsonObject>()
     private val requiredProperties = mutableSetOf<String>()
