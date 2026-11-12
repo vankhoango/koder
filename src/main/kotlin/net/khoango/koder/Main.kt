@@ -22,6 +22,7 @@ import net.khoango.koder.tools.FindFilesTool
 import net.khoango.koder.tools.ListFileTool
 import net.khoango.koder.tools.ReadFileTool
 import net.khoango.koder.tools.RunCommandTool
+import net.khoango.koder.tools.SearchTextTool
 import net.khoango.koder.tools.ToolRegistry
 import net.khoango.koder.tools.WriteFileTool
 import kotlin.io.path.Path
@@ -71,6 +72,7 @@ class Koder: CliktCommand(name="koder") {
                 EditFileTool(projectRoot, fileTracker),
                 RunCommandTool(projectRoot, approve = { askApproval(it) }),
                 FindFilesTool(projectRoot),
+                SearchTextTool(projectRoot),
             ))
 
 
