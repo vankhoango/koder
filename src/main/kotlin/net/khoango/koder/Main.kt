@@ -25,6 +25,7 @@ import net.khoango.koder.tools.ToolRegistry
 import net.khoango.koder.tools.WriteFileTool
 import kotlin.io.path.Path
 import kotlin.io.path.absolute
+import kotlin.time.Duration.Companion.seconds
 
 
 private var SYSTEM_PROMPT = """

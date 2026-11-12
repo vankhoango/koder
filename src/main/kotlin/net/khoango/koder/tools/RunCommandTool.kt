@@ -9,15 +9,19 @@ import net.khoango.koder.domain.ToolDefinition
 import net.khoango.koder.domain.objectSchema
 import java.nio.file.Path
 import java.util.Base64
+import java.util.concurrent.TimeUnit
 import kotlin.io.path.createTempFile
 import kotlin.io.path.deleteIfExists
 import kotlin.io.path.readText
 import kotlin.io.path.writeText
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.minutes
 
 class RunCommandTool(
     private val projectRoot: Path,
     private val approve: suspend (String) -> Boolean,
-) : Tool {
+    private val timeout: Duration = 2.minutes,
+    ) : Tool {
 
     companion object {
         private const val MAX_OUTPUT_CHARS = 10_000
@@ -35,6 +39,8 @@ class RunCommandTool(
             The user must approve each command before it runs, and may decline.
             Commands can't read input, so don't run interactive programs such as editors or prompts.
             To read, list, or edit files, use the file tools instead of shell commands.
+            Commands are stopped if they run longer than ${timeout.inWholeSeconds} seconds,
+            so don't start servers, watchers, or other programs that keep running.
         """.trimIndent(),
         inputSchema = objectSchema {
             string("command", "The command to run.", required = true)
@@ -67,13 +73,32 @@ class RunCommandTool(
                 .start()
             process.outputStream.close()
 
-            val exitCode = process.waitFor()
+            val finished = process.waitFor(timeout.inWholeMilliseconds, TimeUnit.MILLISECONDS)
+            if (!finished) {
+                killProcessTree(process)
+                val partial = outputFile.readText(Charsets.UTF_8).normalizeLineEndings().ifBlank { "(no output)" }
+                return failure(
+                    "The command was stopped because it didn't finish within ${timeout.inWholeSeconds} seconds. " +
+                            "Don't run servers, watchers, or other long-running programs.\n" +
+                            "Output before it was stopped:\n${limitOutput(partial)}"
+                )
+            }
+            val exitCode = process.exitValue()
+
             val text = outputFile.readText(Charsets.UTF_8).normalizeLineEndings().ifBlank { "(no output)" }
             return ToolOutput("Exit code: $exitCode\n${limitOutput(text)}", isError = exitCode != 0)
         } finally {
             runCatching { outputFile.deleteIfExists() }
             runCatching { scriptFile?.deleteIfExists() }
         }
+    }
+
+    private fun killProcessTree(process: Process) {
+        // Collect the children first: once the parent is gone, they can no longer be found through it.
+        val descendants = process.descendants().toList()
+        descendants.forEach { it.destroyForcibly() }
+        process.destroyForcibly()
+        process.waitFor(5, TimeUnit.SECONDS)
     }
 
     private fun powerShellScript(command: String): String =
