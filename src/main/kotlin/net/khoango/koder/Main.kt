@@ -20,6 +20,7 @@ import net.khoango.koder.tools.EditFileTool
 import net.khoango.koder.tools.FileTracker
 import net.khoango.koder.tools.ListFileTool
 import net.khoango.koder.tools.ReadFileTool
+import net.khoango.koder.tools.RunCommandTool
 import net.khoango.koder.tools.ToolRegistry
 import net.khoango.koder.tools.WriteFileTool
 import kotlin.io.path.Path
@@ -30,6 +31,12 @@ private var SYSTEM_PROMPT = """
     You are Koder, a helpful coding assistant running in the user's terminal. Be concise.
     If the user gives you an exact file path, use it directly; only explore with list_files when you don't know where something is.
     """.trimIndent()
+
+private fun askApproval(command: String): Boolean {
+    print("Run this command? [y/N] ")
+    System.out.flush()
+    return readlnOrNull()?.trim()?.lowercase() == "y"
+}
 
 class Koder: CliktCommand(name="koder") {
     private val prompt by argument().optional()
@@ -59,6 +66,7 @@ class Koder: CliktCommand(name="koder") {
                 ListFileTool(projectRoot),
                 WriteFileTool(projectRoot, fileTracker),
                 EditFileTool(projectRoot, fileTracker),
+                RunCommandTool(projectRoot, approve = { askApproval(it) }),
             ))
 
 
@@ -115,7 +123,7 @@ private fun printEvent(event: AgentEvent) = when (event) {
 }
 
 private fun String.preview(maxLength: Int = 200): String {
-    val oneLine = replace("\n", " ⏎ ")
+    val oneLine = replace("\r\n", "\n").replace("\r", "").replace("\n", " ⏎ ")
     return if (oneLine.length <= maxLength) oneLine else oneLine.take(maxLength) + "…"
 }
 
