@@ -28,6 +28,12 @@ val INIT_PROMPT = """
     If KODER.md already exists, read it first and improve it, keeping everything that is still correct.
 """.trimIndent()
 
+val BASE_SYSTEM_PROMPT = """
+    You are Koder, a helpful coding assistant running in the user's terminal. Be concise.
+    If the user gives you an exact file path, use it directly; only explore when you don't know where something is.
+    Before using tools, check whether the conversation already contains the answer.
+""".trimIndent()
+
 fun buildSystemPrompt(base: String, projectRoot: Path): SystemPrompt {
     val isWindows = System.getProperty("os.name").startsWith("Windows")
     var userMemory = Path(System.getProperty("user.home"), ".koder", MEMORY_FILE_NAME)

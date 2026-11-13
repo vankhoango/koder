@@ -26,7 +26,7 @@ val listToolDefinition = ToolDefinition(
     },
 )
 
-class ListFileTool(projectRoot: Path) : Tool {
+class ListFilesTool(projectRoot: Path) : Tool {
 
     private val root = projectRoot.toAbsolutePath().normalize()
 
