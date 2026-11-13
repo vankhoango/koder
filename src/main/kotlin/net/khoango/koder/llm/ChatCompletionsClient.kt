@@ -19,28 +19,6 @@ import net.khoango.koder.domain.Message
 import net.khoango.koder.domain.Role
 import net.khoango.koder.domain.ToolDefinition
 import kotlin.jvm.optionals.getOrNull
-
-class LlmException(message: String, cause: Throwable? = null) : Exception(message, cause)
-
-data class LlmConfig(val baseUrl: String, val apiKey: String, val model: String) {
-    override fun toString() = "LlmConfig(baseUrl=$baseUrl, model=$model, apiKey=***)"
-}
-
-data class Usage(val inputTokens: Long, val outputTokens: Long) {
-    operator fun plus(other: Usage) = Usage(inputTokens + other.inputTokens, outputTokens + other.outputTokens)
-    override fun toString() = "$inputTokens in, $outputTokens out"
-    companion object {
-        val ZERO = Usage(0L, 0L)
-    }
-}
-
-data class LlmResponse(val message: Message, val usage: Usage)
-
-sealed interface LlmStreamEvent {
-    data class TextDelta(val text: String) : LlmStreamEvent
-    data class Completed(val response: LlmResponse) : LlmStreamEvent
-}
-
 class ChatCompletionsClient(private val config: LlmConfig): LlmClient {
 
     private val client = OpenAIOkHttpClient.builder()

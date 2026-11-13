@@ -167,6 +167,20 @@ class AgentTest {
         assertEquals(3, llm.requests.last().size)   // the full history was sent
     }
 
+    @Test
+    fun `continues a restored conversation`() = runTest {
+        val llm = FakeLlmClient(Message.assistant("Second answer"))
+        val agent = agent(llm)
+        agent.restore(AgentState(listOf(Message.user("First question"), Message.assistant("First answer"))))
+
+        agent.run("Second question")
+
+        assertEquals(
+            listOf(Message.user("First question"), Message.assistant("First answer"), Message.user("Second question")),
+            llm.requests.single(),
+        )
+    }
+
     private fun agent(llm: LlmClient, tools: List<Tool> = emptyList(), maxSteps: Int = 25, contextLimit: Int? = null) =
         Agent(
             llm,

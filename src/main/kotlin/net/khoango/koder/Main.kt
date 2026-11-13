@@ -15,6 +15,7 @@ import net.khoango.koder.agent.Agent
 import net.khoango.koder.agent.AgentEvent
 import net.khoango.koder.domain.ContentBlock
 import net.khoango.koder.domain.Message
+import net.khoango.koder.domain.Role
 import net.khoango.koder.llm.ChatCompletionsClient
 import net.khoango.koder.llm.LlmClient
 import net.khoango.koder.llm.LlmConfig
@@ -24,6 +25,7 @@ import net.khoango.koder.permissions.Answer
 import net.khoango.koder.permissions.PermissionPolicy
 import net.khoango.koder.prompt.INIT_PROMPT
 import net.khoango.koder.prompt.buildSystemPrompt
+import net.khoango.koder.session.SessionStore
 import net.khoango.koder.tools.EditFileTool
 import net.khoango.koder.tools.FileTracker
 import net.khoango.koder.tools.FindFilesTool
@@ -79,6 +81,8 @@ class Koder: CliktCommand(name="koder") {
         help = "The model's context window in tokens. Enables automatic compaction.",
     ).int().restrictTo(min = 1_000)
 
+    private val resume by option("--resume", help = "Continue the most recent session in this project").flag()
+
     override fun run(): Unit = runBlocking {
         val apiKey = System.getenv("KODER_API_KEY") ?:
             throw PrintMessage("KODER_API_KEY is not set", statusCode = 1, printError = true)
@@ -102,11 +106,34 @@ class Koder: CliktCommand(name="koder") {
         val llmConfig = LlmConfig(baseUrl, apiKey, model)
         val systemPrompt = buildSystemPrompt(SYSTEM_PROMPT, projectRoot)
         systemPrompt.memoryFiles.forEach { println("[memory: $it]") }
-        ChatCompletionsClient(llmConfig).use { client ->
-            val agent = Agent(client, registry, systemPrompt.text, maxSteps, contextLimit = contextLimit) { event ->
-                if (event is AgentEvent.Compacted) fileTracker.clearKnown()
-                printEvent(event)
+
+        val resumed = if (resume) {
+            try {
+                SessionStore.resumeLatest(projectRoot)
+                    ?: throw PrintMessage("No saved session found in this project.", statusCode = 1, printError = true)
+            } catch (e: IllegalArgumentException) {
+                throw PrintMessage("Could not read the latest session: ${e.message}", statusCode = 1, printError = true)
             }
+        } else {
+            null
+        }
+        val sessionStore = resumed?.store ?: SessionStore.newSession(projectRoot)
+
+        ChatCompletionsClient(llmConfig).use { client ->
+            val agent = Agent(client, registry, systemPrompt.text, maxSteps,
+                contextLimit = contextLimit, onStateChanged = { sessionStore.save(it) }) { event ->
+                    if (event is AgentEvent.Compacted)
+                        fileTracker.clearKnown()
+                    printEvent(event)
+            }
+
+            resumed?.let {
+                agent.restore(it.state)
+                println("[resumed ${it.store.file.fileName}: ${it.state.history.size} messages]")
+                it.state.history.lastOrNull { message -> message.role == Role.ASSISTANT && message.text.isNotBlank() }
+                    ?.let { last -> println("Last answer: ${last.text.lines().first().take(200)}") }
+            }
+
             chatLoop(agent, prompt, fileTracker) {
                 val reloaded = buildSystemPrompt(SYSTEM_PROMPT, projectRoot)
                 reloaded.memoryFiles.forEach { println("[memory reloaded: $it]") }

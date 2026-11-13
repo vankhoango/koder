@@ -1,12 +1,21 @@
 package net.khoango.koder.domain
 
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
 
+@Serializable
 enum class Role {USER, ASSISTANT }
 
+@Serializable
 sealed interface ContentBlock {
+
+    @Serializable
+    @SerialName("text")
     data class Text(val text: String) : ContentBlock
 
+    @Serializable
+    @SerialName("tool_use")
     data class ToolUse(
         val id: String,
         val name: String,
@@ -14,6 +23,8 @@ sealed interface ContentBlock {
         val providerMetadata: JsonObject? = null,
     ): ContentBlock
 
+    @Serializable
+    @SerialName("tool_result")
     data class ToolResult(
         val toolUseId: String,
         val toolName: String,
@@ -22,6 +33,7 @@ sealed interface ContentBlock {
     ) : ContentBlock
 }
 
+@Serializable
 data class Message(val role: Role, val content: List<ContentBlock>) {
     val text: String
         get() = content.filterIsInstance<ContentBlock.Text>().joinToString("") {

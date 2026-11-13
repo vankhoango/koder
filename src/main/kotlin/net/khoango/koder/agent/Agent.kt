@@ -1,5 +1,6 @@
 package net.khoango.koder.agent
 
+import kotlinx.serialization.Serializable
 import net.khoango.koder.domain.ContentBlock
 import net.khoango.koder.domain.Message
 import net.khoango.koder.domain.Role
@@ -11,12 +12,21 @@ import net.khoango.koder.llm.Usage
 import net.khoango.koder.llm.send
 import net.khoango.koder.tools.ToolRegistry
 
+
+@Serializable
+data class AgentState(
+    val history: List<Message>,
+    val summary: String? = null,
+    val usage: Usage = Usage.ZERO,
+)
+
 class Agent (
     private val llm: LlmClient,
     private val tools: ToolRegistry,
     var systemPrompt: String,
     private val maxSteps: Int = 25,
     private val contextLimit: Int? = null,
+    private val onStateChanged: (AgentState) -> Unit = {},
     private val onEvent: (AgentEvent) -> Unit = {},
 ) {
 
@@ -56,6 +66,7 @@ class Agent (
         }
 
         history += turn
+        onStateChanged(snapshot())
     }
 
     private fun refuseTools(calls: List<ContentBlock.ToolUse>): Message =
@@ -76,6 +87,15 @@ class Agent (
         history.clear()
         summary = null
         usage = Usage.ZERO
+        onStateChanged(snapshot())
+    }
+
+    fun restore(state: AgentState) {
+        history.clear()
+        history += state.history
+        summary = state.summary
+        usage = state.usage
+        lastInputTokens = 0
     }
 
     private suspend fun send(turn: MutableList<Message>): Message {
@@ -126,6 +146,7 @@ class Agent (
         history.clear()
         lastInputTokens = 0
         onEvent(AgentEvent.Compacted(newSummary))
+        onStateChanged(snapshot())
         return true
     }
 
@@ -163,5 +184,7 @@ class Agent (
 
         private const val COMPACT_THRESHOLD = 0.75
     }
+
+    fun snapshot() = AgentState(history.toList(), summary, usage)
 }
 
