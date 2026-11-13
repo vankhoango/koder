@@ -13,9 +13,11 @@ import com.github.ajalt.clikt.parameters.types.restrictTo
 import kotlinx.coroutines.runBlocking
 import net.khoango.koder.agent.Agent
 import net.khoango.koder.agent.AgentEvent
+import net.khoango.koder.domain.ContentBlock
 import net.khoango.koder.llm.LlmClient
 import net.khoango.koder.llm.LlmConfig
 import net.khoango.koder.llm.LlmException
+import net.khoango.koder.permissions.PermissionPolicy
 import net.khoango.koder.tools.EditFileTool
 import net.khoango.koder.tools.FileTracker
 import net.khoango.koder.tools.FindFilesTool
@@ -36,10 +38,11 @@ private var SYSTEM_PROMPT = """
     Before using tools, check whether the conversation already contains the answer.
     """.trimIndent()
 
-private fun askApproval(command: String): Boolean {
-    print("Run this command? [y/N] ")
+private fun askPermission(call: ContentBlock.ToolUse): Boolean {
+    print("Allow ${call.name}? [y/N] ")
     System.out.flush()
-    return readlnOrNull()?.trim()?.lowercase() == "y"
+    val answer = readlnOrNull()
+    return answer?.trim()?.lowercase() == "y"
 }
 
 class Koder: CliktCommand(name="koder") {
@@ -64,16 +67,16 @@ class Koder: CliktCommand(name="koder") {
 
         val projectRoot = Path("").absolute()
         val fileTracker = FileTracker()
-        val registry = if (noTools) ToolRegistry(emptyList())
-            else ToolRegistry(listOf(
-                ReadFileTool(projectRoot, fileTracker),
-                ListFileTool(projectRoot),
-                WriteFileTool(projectRoot, fileTracker),
-                EditFileTool(projectRoot, fileTracker),
-                RunCommandTool(projectRoot, approve = { askApproval(it) }),
-                FindFilesTool(projectRoot),
-                SearchTextTool(projectRoot),
-            ))
+        val tools = if (noTools) emptyList() else listOf(
+            ReadFileTool(projectRoot, fileTracker),
+            ListFileTool(projectRoot),
+            WriteFileTool(projectRoot, fileTracker),
+            EditFileTool(projectRoot, fileTracker),
+            RunCommandTool(projectRoot),
+            FindFilesTool(projectRoot),
+            SearchTextTool(projectRoot),
+        )
+        val registry = ToolRegistry(tools, PermissionPolicy(), ::askPermission)
 
 
         val llmConfig = LlmConfig(baseUrl, apiKey, model)

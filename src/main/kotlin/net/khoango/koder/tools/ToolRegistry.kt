@@ -2,9 +2,15 @@ package net.khoango.koder.tools
 
 import net.khoango.koder.domain.ContentBlock
 import net.khoango.koder.domain.ToolDefinition
+import net.khoango.koder.permissions.Decision
+import net.khoango.koder.permissions.PermissionPolicy
 import kotlin.coroutines.cancellation.CancellationException
 
-class ToolRegistry(tools: List<Tool>) {
+class ToolRegistry(
+    tools: List<Tool>,
+    private val policy: PermissionPolicy = PermissionPolicy(),
+    private val askUser: suspend (ContentBlock.ToolUse) -> Boolean = { false },
+) {
 
     private val toolsByName = tools.associateBy{ it.definition.name }
 
@@ -19,15 +25,34 @@ class ToolRegistry(tools: List<Tool>) {
                 isError = true,
             )
         } else {
-            try {
-                tool.execute(call.input)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                ToolOutput("Tool '${call.name}' failed: ${e::class.simpleName} ${e.message}", isError = true)
+            when (policy.decide(call)) {
+                Decision.ALLOW -> runTool(tool, call)
+                Decision.ASK -> if (askUser(call)) runTool(tool, call) else DECLINED
+                Decision.DENY -> BLOCKED
             }
         }
 
         return ContentBlock.ToolResult(call.id, call.name, output.content, output.isError)
+    }
+
+    private suspend fun runTool(tool: Tool, call: ContentBlock.ToolUse): ToolOutput =
+        try {
+            tool.execute(call.input)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            ToolOutput("Tool '${call.name}' failed: ${e::class.simpleName} ${e.message}", isError = true)
+        }
+
+    companion object {
+        private val DECLINED = ToolOutput(
+            "The user declined this action. Ask the user how to proceed, or try a different approach.",
+            isError = true,
+        )
+        private val BLOCKED = ToolOutput(
+            "Blocked by Koder's safety rules. Don't try to achieve the same effect another way; " +
+                    "explain to the user what you wanted to do and why.",
+            isError = true,
+        )
     }
 }

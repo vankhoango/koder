@@ -19,7 +19,6 @@ import kotlin.time.Duration.Companion.minutes
 
 class RunCommandTool(
     private val projectRoot: Path,
-    private val approve: suspend (String) -> Boolean,
     private val timeout: Duration = 2.minutes,
     ) : Tool {
 
@@ -41,6 +40,7 @@ class RunCommandTool(
             To read, list, or edit files, use the file tools instead of shell commands.
             Commands are stopped if they run longer than ${timeout.inWholeSeconds} seconds,
             so don't start servers, watchers, or other programs that keep running.
+            Some commands need the user's approval and may be declined; dangerous commands are blocked.
         """.trimIndent(),
         inputSchema = objectSchema {
             string("command", "The command to run.", required = true)
@@ -49,9 +49,6 @@ class RunCommandTool(
 
     override suspend fun execute(input: JsonObject): ToolOutput {
         val command = input.stringParam("command") ?: return failure("Missing required parameter: command")
-        if (!approve(command)) {
-            return failure("The user declined to run this command. Ask the user how to proceed, or try a different approach.")
-        }
         return withContext(Dispatchers.IO) { runCommand(command) }
     }
 
