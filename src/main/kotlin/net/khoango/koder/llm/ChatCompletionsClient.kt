@@ -24,6 +24,7 @@ class ChatCompletionsClient(private val config: LlmConfig): LlmClient {
     private val client = OpenAIOkHttpClient.builder()
         .baseUrl(config.baseUrl)
         .apiKey(config.apiKey)
+        .maxRetries(0)
         .build()
 
     override fun stream(
@@ -104,8 +105,13 @@ private class ToolCallBuilder(private val index: Long) {
     )
 }
 
+private val RETRYABLE_STATUS_CODES = setOf(408, 429, 500, 502, 503, 504)
 private fun Throwable.toLlmException(): Throwable = when (this) {
-    is OpenAIServiceException -> LlmException("API error (HTTP ${statusCode()}): $message", this)
+    is OpenAIServiceException -> LlmException(
+        "API error (HTTP ${statusCode()}): $message",
+        this,
+        retryable = statusCode() in RETRYABLE_STATUS_CODES,
+    )
     is OpenAIIoException -> LlmException("Network error: $message", this)
     else -> this
 }

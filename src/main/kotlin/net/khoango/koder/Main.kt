@@ -21,6 +21,7 @@ import net.khoango.koder.llm.LlmClient
 import net.khoango.koder.llm.LlmConfig
 import net.khoango.koder.llm.LlmException
 import net.khoango.koder.llm.LlmStreamEvent
+import net.khoango.koder.llm.RetryingLlmClient
 import net.khoango.koder.permissions.Answer
 import net.khoango.koder.permissions.PermissionPolicy
 import net.khoango.koder.prompt.INIT_PROMPT
@@ -119,7 +120,11 @@ class Koder: CliktCommand(name="koder") {
         }
         val sessionStore = resumed?.store ?: SessionStore.newSession(projectRoot)
 
-        ChatCompletionsClient(llmConfig).use { client ->
+        val baseClient = ChatCompletionsClient(llmConfig)
+
+        RetryingLlmClient(baseClient, onRetry = { attempt, wait, error ->
+            println("[${error.message}; retrying in ${wait.inWholeMilliseconds / 1000.0}s (attempt ${attempt + 1})]")
+        }).use { client ->
             val agent = Agent(client, registry, systemPrompt.text, maxSteps,
                 contextLimit = contextLimit, onStateChanged = { sessionStore.save(it) }) { event ->
                     if (event is AgentEvent.Compacted)

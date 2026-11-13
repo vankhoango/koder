@@ -8,7 +8,11 @@ import net.khoango.koder.domain.Message
 import net.khoango.koder.domain.ToolDefinition
 
 
-class LlmException(message: String, cause: Throwable? = null) : Exception(message, cause)
+class LlmException(
+    message: String,
+    cause: Throwable? = null,
+    val retryable: Boolean = false,
+) : Exception(message, cause)
 
 data class LlmConfig(val baseUrl: String, val apiKey: String, val model: String) {
     override fun toString() = "LlmConfig(baseUrl=$baseUrl, model=$model, apiKey=***)"
