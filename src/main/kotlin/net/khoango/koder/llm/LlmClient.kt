@@ -19,11 +19,21 @@ data class LlmConfig(val baseUrl: String, val apiKey: String, val model: String)
 }
 
 @Serializable
-data class Usage(val inputTokens: Long, val outputTokens: Long) {
-    operator fun plus(other: Usage) = Usage(inputTokens + other.inputTokens, outputTokens + other.outputTokens)
-    override fun toString() = "$inputTokens in, $outputTokens out"
+data class Usage(
+    val inputTokens: Long,
+    val outputTokens: Long,
+    val cachedInputTokens: Long = 0,
+) {
+    operator fun plus(other: Usage) = Usage(
+        inputTokens + other.inputTokens,
+        outputTokens + other.outputTokens,
+        cachedInputTokens + other.cachedInputTokens,
+    )
+
+    override fun toString() = "$inputTokens in ($cachedInputTokens cached), $outputTokens out"
+
     companion object {
-        val ZERO = Usage(0L, 0L)
+        val ZERO = Usage(0, 0)
     }
 }
 

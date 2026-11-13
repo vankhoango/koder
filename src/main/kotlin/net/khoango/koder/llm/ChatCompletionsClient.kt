@@ -3,6 +3,7 @@ package net.khoango.koder.llm
 import com.openai.client.okhttp.OpenAIOkHttpClient
 import com.openai.core.JsonValue
 import com.openai.core.jsonMapper
+import com.openai.errors.OpenAIInvalidDataException
 import com.openai.errors.OpenAIIoException
 import com.openai.errors.OpenAIServiceException
 import com.openai.models.FunctionDefinition
@@ -43,7 +44,14 @@ class ChatCompletionsClient(private val config: LlmConfig): LlmClient {
         // 1. Read all chunks: emit text pieces, and collect everything else.
         client.chat().completions().createStreaming(params).use { response ->
             response.stream().iterator().forEach { chunk ->
-                chunk.usage().getOrNull()?.let { usage = Usage(it.promptTokens(), it.completionTokens()) }
+                chunk.usage().getOrNull()?.let { u ->
+                    //println("[raw usage] $u")
+                    usage = Usage(
+                        inputTokens = u.promptTokens(),
+                        outputTokens = maxOf(u.completionTokens(), u.totalTokens() - u.promptTokens()),
+                        cachedInputTokens = u.promptTokensDetails().getOrNull()?.cachedTokens()?.getOrNull() ?: 0,
+                    )
+                }
                 val delta = chunk.choices().firstOrNull()?.delta() ?: return@forEach
 
                 delta.content().getOrNull()?.takeIf { it.isNotEmpty() }?.let {
@@ -51,7 +59,8 @@ class ChatCompletionsClient(private val config: LlmConfig): LlmClient {
                     emit(LlmStreamEvent.TextDelta(it))
                 }
                 delta.toolCalls().getOrNull().orEmpty().forEach { call ->
-                    toolCalls.getOrPut(call.index()) { ToolCallBuilder(call.index()) }.add(call)
+                    val index = indexOf(call, toolCalls)
+                    toolCalls.getOrPut(index) { ToolCallBuilder(index) }.add(call)
                 }
             }
         }   // ← the loop and the `use` block end here
@@ -79,11 +88,26 @@ class ChatCompletionsClient(private val config: LlmConfig): LlmClient {
             .build()
     }
 
+    /**
+     * Finds which tool call a streamed fragment belongs to. Uses the standard `index` field when present;
+     * some servers (e.g. Gemini's compatibility layer) omit it, so fall back to the call's ID.
+     */
+    private fun indexOf(call: ChatCompletionChunk.Choice.Delta.ToolCall, toolCalls: Map<Long, ToolCallBuilder>): Long {
+        call._index().asKnown().getOrNull()?.let { return it }
+
+        val id = call.id().getOrNull()
+            ?: return (toolCalls.size - 1L).coerceAtLeast(0)          // no ID: continues the last call
+
+        return toolCalls.entries.firstOrNull { it.value.id == id }?.key   // a call we've already started
+            ?: toolCalls.size.toLong()                                     // a new call
+    }
+
     override fun close() = client.close()
 }
 
 private class ToolCallBuilder(private val index: Long) {
-    private var id = ""
+    var id = ""
+        private set
     private var name = ""
     private val arguments = StringBuilder()
     private var metadata: JsonObject? = null
@@ -113,6 +137,7 @@ private fun Throwable.toLlmException(): Throwable = when (this) {
         retryable = statusCode() in RETRYABLE_STATUS_CODES,
     )
     is OpenAIIoException -> LlmException("Network error: $message", this)
+    is OpenAIInvalidDataException -> LlmException("The server sent data in an unexpected format: $message", this)
     else -> this
 }
 
