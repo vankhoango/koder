@@ -16,6 +16,7 @@ dependencies {
     implementation(libs.clikt)
     implementation(libs.openai)
 
+    testImplementation(libs.coroutines.test)
     testImplementation(kotlin("test"))
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
 }

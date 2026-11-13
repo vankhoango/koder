@@ -41,16 +41,16 @@ sealed interface LlmStreamEvent {
     data class Completed(val response: LlmResponse) : LlmStreamEvent
 }
 
-class LlmClient(private val config: LlmConfig): AutoCloseable {
+class ChatCompletionsClient(private val config: LlmConfig): LlmClient {
 
     private val client = OpenAIOkHttpClient.builder()
         .baseUrl(config.baseUrl)
         .apiKey(config.apiKey)
         .build()
 
-    fun stream(system: String,
+    override fun stream(system: String,
                messages: List<Message>,
-               tools: List<ToolDefinition> = emptyList(),
+               tools: List<ToolDefinition>,
     ): Flow<LlmStreamEvent> = flow {
         val params = buildParams(system, messages, tools).toBuilder()
             .streamOptions(ChatCompletionStreamOptions.builder().includeUsage(true).build())

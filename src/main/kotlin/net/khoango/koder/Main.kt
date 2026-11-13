@@ -15,6 +15,7 @@ import net.khoango.koder.agent.Agent
 import net.khoango.koder.agent.AgentEvent
 import net.khoango.koder.domain.ContentBlock
 import net.khoango.koder.domain.Message
+import net.khoango.koder.llm.ChatCompletionsClient
 import net.khoango.koder.llm.LlmClient
 import net.khoango.koder.llm.LlmConfig
 import net.khoango.koder.llm.LlmException
@@ -90,7 +91,7 @@ class Koder: CliktCommand(name="koder") {
 
 
         val llmConfig = LlmConfig(baseUrl, apiKey, model)
-        LlmClient(llmConfig).use { client ->
+        ChatCompletionsClient(llmConfig).use { client ->
             val agent = Agent(client, registry, SYSTEM_PROMPT, maxSteps, ::printEvent)
             chatLoop(agent, prompt, fileTracker)
         }
