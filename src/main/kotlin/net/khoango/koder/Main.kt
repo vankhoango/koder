@@ -22,6 +22,7 @@ import net.khoango.koder.llm.LlmException
 import net.khoango.koder.llm.LlmStreamEvent
 import net.khoango.koder.permissions.Answer
 import net.khoango.koder.permissions.PermissionPolicy
+import net.khoango.koder.prompt.buildSystemPrompt
 import net.khoango.koder.tools.EditFileTool
 import net.khoango.koder.tools.FileTracker
 import net.khoango.koder.tools.FindFilesTool
@@ -82,6 +83,7 @@ class Koder: CliktCommand(name="koder") {
             throw PrintMessage("KODER_API_KEY is not set", statusCode = 1, printError = true)
 
         val projectRoot = Path("").absolute()
+
         val fileTracker = FileTracker()
         val tools = if (noTools) emptyList() else listOf(
             ReadFileTool(projectRoot, fileTracker),
@@ -97,8 +99,10 @@ class Koder: CliktCommand(name="koder") {
 
 
         val llmConfig = LlmConfig(baseUrl, apiKey, model)
+        val systemPrompt = buildSystemPrompt(SYSTEM_PROMPT, projectRoot)
+        systemPrompt.memoryFiles.forEach { println("[memory: $it]") }
         ChatCompletionsClient(llmConfig).use { client ->
-            val agent = Agent(client, registry, SYSTEM_PROMPT, maxSteps, contextLimit = contextLimit) { event ->
+            val agent = Agent(client, registry, systemPrompt.text, maxSteps, contextLimit = contextLimit) { event ->
                 if (event is AgentEvent.Compacted) fileTracker.clearKnown()
                 printEvent(event)
             }
