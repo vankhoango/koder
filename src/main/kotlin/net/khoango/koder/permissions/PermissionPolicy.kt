@@ -4,14 +4,38 @@ import net.khoango.koder.domain.ContentBlock
 import net.khoango.koder.tools.stringParam
 
 enum class Decision {ALLOW, ASK, DENY}
+enum class Answer { YES, NO, ALWAYS }
 
-class PermissionPolicy {
+class PermissionPolicy(private val yolo: Boolean = false) {
 
-    fun decide(call: ContentBlock.ToolUse): Decision = when(call.name) {
+    private val sessionRules = mutableSetOf<String>()
+
+    fun decide(call: ContentBlock.ToolUse): Decision {
+        val base = baseDecision(call)
+        return when {
+            base != Decision.ASK -> base          // ALLOW and DENY are never changed
+            yolo -> Decision.ALLOW
+            ruleKey(call) in sessionRules -> Decision.ALLOW
+            else -> Decision.ASK
+        }
+    }
+
+    private fun baseDecision(call: ContentBlock.ToolUse): Decision = when (call.name) {
         "read_file", "list_files", "find_files", "search_text" -> Decision.ALLOW
         "run_command" -> decideCommand(call.input.stringParam("command").orEmpty().trim())
         else -> Decision.ASK
     }
+
+    fun allowForSession(call: ContentBlock.ToolUse) {
+        sessionRules += ruleKey(call)
+    }
+
+    private fun ruleKey(call: ContentBlock.ToolUse): String =
+        if (call.name == "run_command") {
+            "run_command:" + call.input.stringParam("command").orEmpty().trim()
+        } else {
+            call.name
+        }
 
     private fun decideCommand(command: String): Decision {
         if (DANGEROUS.any { it.containsMatchIn(command) }) return Decision.DENY

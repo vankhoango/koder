@@ -17,6 +17,7 @@ import net.khoango.koder.domain.ContentBlock
 import net.khoango.koder.llm.LlmClient
 import net.khoango.koder.llm.LlmConfig
 import net.khoango.koder.llm.LlmException
+import net.khoango.koder.permissions.Answer
 import net.khoango.koder.permissions.PermissionPolicy
 import net.khoango.koder.tools.EditFileTool
 import net.khoango.koder.tools.FileTracker
@@ -38,11 +39,15 @@ private var SYSTEM_PROMPT = """
     Before using tools, check whether the conversation already contains the answer.
     """.trimIndent()
 
-private fun askPermission(call: ContentBlock.ToolUse): Boolean {
-    print("Allow ${call.name}? [y/N] ")
+private fun askPermission(call: ContentBlock.ToolUse): Answer {
+    val scope = if (call.name == "run_command") "this exact command" else "all ${call.name} calls"
+    print("Allow ${call.name}? [y]es / [a]lways ($scope, this session) / [N]o ")
     System.out.flush()
-    val answer = readlnOrNull()
-    return answer?.trim()?.lowercase() == "y"
+    return when (readlnOrNull()?.trim()?.lowercase()) {
+        "y", "yes" -> Answer.YES
+        "a", "always" -> Answer.ALWAYS
+        else -> Answer.NO
+    }
 }
 
 class Koder: CliktCommand(name="koder") {
@@ -53,6 +58,8 @@ class Koder: CliktCommand(name="koder") {
     private val baseUrl by option("--baseUrl", envvar = "KODER_BASE_URL")
         //.default("https://generativelanguage.googleapis.com/v1beta/openai/")
         .default("http://192.168.1.60:1234/v1")
+
+    private val yolo by option("--yolo", help = "Allow every action without asking (dangerous actions are still blocked)").flag()
 
     private val noTools by option("--no-tools", help = "Don't advertise any tools to the model").flag()
 
@@ -76,7 +83,8 @@ class Koder: CliktCommand(name="koder") {
             FindFilesTool(projectRoot),
             SearchTextTool(projectRoot),
         )
-        val registry = ToolRegistry(tools, PermissionPolicy(), ::askPermission)
+        if (yolo) println("⚠ --yolo: all actions are allowed without asking. Dangerous actions are still blocked.")
+        val registry = ToolRegistry(tools, PermissionPolicy(yolo), ::askPermission)
 
 
         val llmConfig = LlmConfig(baseUrl, apiKey, model)

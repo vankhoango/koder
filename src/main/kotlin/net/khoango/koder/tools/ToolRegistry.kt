@@ -2,6 +2,7 @@ package net.khoango.koder.tools
 
 import net.khoango.koder.domain.ContentBlock
 import net.khoango.koder.domain.ToolDefinition
+import net.khoango.koder.permissions.Answer
 import net.khoango.koder.permissions.Decision
 import net.khoango.koder.permissions.PermissionPolicy
 import kotlin.coroutines.cancellation.CancellationException
@@ -9,7 +10,7 @@ import kotlin.coroutines.cancellation.CancellationException
 class ToolRegistry(
     tools: List<Tool>,
     private val policy: PermissionPolicy = PermissionPolicy(),
-    private val askUser: suspend (ContentBlock.ToolUse) -> Boolean = { false },
+    private val askUser: suspend (ContentBlock.ToolUse) -> Answer = { Answer.NO },
 ) {
 
     private val toolsByName = tools.associateBy{ it.definition.name }
@@ -27,8 +28,15 @@ class ToolRegistry(
         } else {
             when (policy.decide(call)) {
                 Decision.ALLOW -> runTool(tool, call)
-                Decision.ASK -> if (askUser(call)) runTool(tool, call) else DECLINED
                 Decision.DENY -> BLOCKED
+                Decision.ASK -> when (askUser(call)) {
+                    Answer.YES -> runTool(tool, call)
+                    Answer.ALWAYS -> {
+                        policy.allowForSession(call)
+                        runTool(tool, call)
+                    }
+                    Answer.NO -> DECLINED
+                }
             }
         }
 

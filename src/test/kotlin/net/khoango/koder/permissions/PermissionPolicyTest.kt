@@ -48,4 +48,23 @@ class PermissionPolicyTest {
         assertEquals(Decision.ALLOW, policy.decide(read))
         assertEquals(Decision.ASK, policy.decide(write))
     }
+
+    @Test
+    fun `always allows only the exact command for the rest of the session`() {
+        val approved = ContentBlock.ToolUse("id", "run_command", buildJsonObject { put("command", "git commit -m \"Fix\"") })
+        policy.allowForSession(approved)
+
+        assertEquals(Decision.ALLOW, command("git commit -m \"Fix\""))
+        assertEquals(Decision.ASK, command("git commit -m \"Other\""))
+    }
+
+    @Test
+    fun `yolo allows everything except dangerous commands`() {
+        val yoloPolicy = PermissionPolicy(yolo = true)
+        val write = ContentBlock.ToolUse("id", "write_file", buildJsonObject { put("path", "a.txt") })
+        val format = ContentBlock.ToolUse("id", "run_command", buildJsonObject { put("command", "Format-Volume -DriveLetter C") })
+
+        assertEquals(Decision.ALLOW, yoloPolicy.decide(write))
+        assertEquals(Decision.DENY, yoloPolicy.decide(format))
+    }
 }
