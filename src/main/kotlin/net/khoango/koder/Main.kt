@@ -22,9 +22,12 @@ import kotlin.io.path.absolute
 
 class Koder : CliktCommand(name = "koder") {
     private val prompt by argument().optional()
-    private val model by option("--model", envvar = "KODER_MODEL").default("gemini-3.5-flash")
+    private val model by option("--model", envvar = "KODER_MODEL")
+        //.default("gemini-3.5-flash")
+        .default("google/gemma-4-12b-qat")
     private val baseUrl by option("--base-url", envvar = "KODER_BASE_URL")
-        .default("https://generativelanguage.googleapis.com/v1beta/openai/")
+        //.default("https://generativelanguage.googleapis.com/v1beta/openai/")
+        .default("http://192.168.1.60:1234/v1")
     private val noTools by option("--no-tools", help = "Don't advertise any tools to the model").flag()
     private val maxSteps by option("--max-steps", help = "Maximum tool steps per request").int().restrictTo(1..100).default(25)
     private val yolo by option("--yolo", help = "Allow every action without asking (dangerous actions are still blocked)").flag()
