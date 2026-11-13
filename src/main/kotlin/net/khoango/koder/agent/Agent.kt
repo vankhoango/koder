@@ -4,9 +4,11 @@ import net.khoango.koder.domain.ContentBlock
 import net.khoango.koder.domain.Message
 import net.khoango.koder.domain.Role
 import net.khoango.koder.llm.LlmClient
+import net.khoango.koder.llm.LlmException
 import net.khoango.koder.llm.LlmResponse
 import net.khoango.koder.llm.LlmStreamEvent
 import net.khoango.koder.llm.Usage
+import net.khoango.koder.llm.send
 import net.khoango.koder.tools.ToolRegistry
 
 class Agent (
@@ -18,6 +20,10 @@ class Agent (
     ) {
 
     private val history = mutableListOf<Message>()
+    private var summary: String? = null
+
+    private val fullSystemPrompt: String
+        get() = summary?.let { "$systemPrompt\n\n# Summary of the earlier conversation\n$it" } ?: systemPrompt
 
     var usage: Usage = Usage.ZERO
         private set
@@ -64,6 +70,7 @@ class Agent (
 
     fun reset() {
         history.clear()
+        summary = null
         usage = Usage.ZERO
     }
 
@@ -71,7 +78,7 @@ class Agent (
         var completed: LlmResponse? = null
         var hasText = false
 
-        llm.stream(systemPrompt, history + turn, tools.definitions).collect { event ->
+        llm.stream(fullSystemPrompt, history + turn, tools.definitions).collect { event ->
             when (event) {
                 is LlmStreamEvent.TextDelta -> {
                     hasText = true
@@ -96,6 +103,34 @@ class Agent (
             }
         }
         return Message(Role.USER, results)
+    }
+
+    /** Replaces the history with a summary written by the model. Returns false if there was nothing to compact. */
+    suspend fun compact(): Boolean {
+        if (history.isEmpty()) return false
+
+        val response = llm.send(fullSystemPrompt, history + Message.user(COMPACT_INSTRUCTIONS), tools.definitions)
+        usage += response.usage
+
+        val newSummary = response.message.text
+        if (newSummary.isBlank() || response.message.toolUses.isNotEmpty()) {
+            throw LlmException("The model didn't return a usable summary, so the conversation was not compacted.")
+        }
+
+        summary = newSummary
+        history.clear()
+        onEvent(AgentEvent.Compacted(newSummary))
+        return true
+    }
+
+    companion object {
+        private val COMPACT_INSTRUCTIONS = """
+            Summarize our conversation so far, so that you can continue the work without the full history.
+            Include: what the user asked for and why; important decisions; the files you read or changed,
+            with their paths and what matters about them; commands you ran and their results; and anything
+            still unfinished. Keep exact names, paths, and error messages. Don't call any tools.
+            Reply with the summary only.
+        """.trimIndent()
     }
 }
 

@@ -92,7 +92,10 @@ class Koder: CliktCommand(name="koder") {
 
         val llmConfig = LlmConfig(baseUrl, apiKey, model)
         ChatCompletionsClient(llmConfig).use { client ->
-            val agent = Agent(client, registry, SYSTEM_PROMPT, maxSteps, ::printEvent)
+            val agent = Agent(client, registry, SYSTEM_PROMPT, maxSteps) { event ->
+                if (event is AgentEvent.Compacted) fileTracker.clearKnown()
+                printEvent(event)
+            }
             chatLoop(agent, prompt, fileTracker)
         }
     }
@@ -113,6 +116,16 @@ private suspend fun chatLoop(agent: Agent, firstPrompt: String? = null, fileTrac
                 agent.reset()
                 fileTracker.clearKnown()
                 println("Conversation cleared")
+                input = null
+                continue
+            }
+            "/compact" -> {
+                try {
+                    if (!agent.compact()) println("Nothing to compact yet.")
+                    println("[session: ${agent.usage}]")
+                } catch (e: LlmException) {
+                    println("Error: ${e.message}")
+                }
                 input = null
                 continue
             }
@@ -144,6 +157,7 @@ private fun printEvent(event: AgentEvent) = when (event) {
     }
     is AgentEvent.StepLimitReached -> println("[step limit of ${event.maxSteps} reached]")
     AgentEvent.Abandoned -> println("(Stopped: the model kept requesting tools after the limit. This exchange isn't saved.)")
+    is AgentEvent.Compacted -> println("[conversation compacted into a ${event.summary.length}-character summary]")
 }
 
 private fun String.preview(maxLength: Int = 200): String {

@@ -48,23 +48,25 @@ class ChatCompletionsClient(private val config: LlmConfig): LlmClient {
         .apiKey(config.apiKey)
         .build()
 
-    override fun stream(system: String,
-               messages: List<Message>,
-               tools: List<ToolDefinition>,
+    override fun stream(
+        system: String,
+        messages: List<Message>,
+        tools: List<ToolDefinition>,
     ): Flow<LlmStreamEvent> = flow {
         val params = buildParams(system, messages, tools).toBuilder()
             .streamOptions(ChatCompletionStreamOptions.builder().includeUsage(true).build())
             .build()
+
         val text = StringBuilder()
         val toolCalls = sortedMapOf<Long, ToolCallBuilder>()
         var usage = Usage.ZERO
 
+        // 1. Read all chunks: emit text pieces, and collect everything else.
         client.chat().completions().createStreaming(params).use { response ->
             response.stream().iterator().forEach { chunk ->
-                chunk.usage().getOrNull()?.let {
-                    usage = Usage(it.promptTokens(), it.completionTokens())
-                }
+                chunk.usage().getOrNull()?.let { usage = Usage(it.promptTokens(), it.completionTokens()) }
                 val delta = chunk.choices().firstOrNull()?.delta() ?: return@forEach
+
                 delta.content().getOrNull()?.takeIf { it.isNotEmpty() }?.let {
                     text.append(it)
                     emit(LlmStreamEvent.TextDelta(it))
@@ -72,13 +74,17 @@ class ChatCompletionsClient(private val config: LlmConfig): LlmClient {
                 delta.toolCalls().getOrNull().orEmpty().forEach { call ->
                     toolCalls.getOrPut(call.index()) { ToolCallBuilder(call.index()) }.add(call)
                 }
-                val content = buildList {
-                    if (text.isNotEmpty()) add(ContentBlock.Text(text.toString()))
-                    toolCalls.values.forEach { add(it.build()) }
-                }
-                emit(LlmStreamEvent.Completed(LlmResponse(Message(Role.ASSISTANT, content), usage)))
             }
+        }   // ← the loop and the `use` block end here
+
+        // 2. Build the complete message, once.
+        val content = buildList {
+            if (text.isNotEmpty()) add(ContentBlock.Text(text.toString()))
+            toolCalls.values.forEach { add(it.build()) }
         }
+
+        // 3. Emit Completed, once.
+        emit(LlmStreamEvent.Completed(LlmResponse(Message(Role.ASSISTANT, content), usage)))
     }
         .flowOn(Dispatchers.IO)
         .catch { throw it.toLlmException() }

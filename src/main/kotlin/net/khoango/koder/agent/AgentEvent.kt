@@ -9,4 +9,5 @@ sealed interface AgentEvent {
     data class ToolFinished(val result: ContentBlock.ToolResult) : AgentEvent
     data class StepLimitReached(val maxSteps: Int) : AgentEvent
     data object Abandoned : AgentEvent
+    data class Compacted(val summary: String) : AgentEvent
 }
