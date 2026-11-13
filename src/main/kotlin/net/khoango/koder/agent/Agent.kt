@@ -16,8 +16,9 @@ class Agent (
     private val tools: ToolRegistry,
     private val systemPrompt: String,
     private val maxSteps: Int = 25,
+    private val contextLimit: Int? = null,
     private val onEvent: (AgentEvent) -> Unit = {},
-    ) {
+) {
 
     private val history = mutableListOf<Message>()
     private var summary: String? = null
@@ -28,7 +29,10 @@ class Agent (
     var usage: Usage = Usage.ZERO
         private set
 
+    private var lastInputTokens = 0L
+
     suspend fun run(userInput: String) {
+        compactIfNeeded()
         val turn = mutableListOf(Message.user(userInput))
 
         var reply = send(turn)
@@ -91,6 +95,7 @@ class Agent (
 
         val response = checkNotNull(completed) { "The stream ended without a final response." }
         usage += response.usage
+        lastInputTokens = response.usage.inputTokens
         turn += response.message
         return response.message
     }
@@ -119,8 +124,32 @@ class Agent (
 
         summary = newSummary
         history.clear()
+        lastInputTokens = 0
         onEvent(AgentEvent.Compacted(newSummary))
         return true
+    }
+
+    private suspend fun compactIfNeeded() {
+        val limit = contextLimit ?: return
+        val used = if (lastInputTokens > 0) lastInputTokens else estimateTokens()
+        if (used < limit * COMPACT_THRESHOLD) return
+
+        onEvent(AgentEvent.AutoCompacting(used, limit))
+        compact()
+    }
+
+    /** A rough estimate (about 4 characters per token), for servers that don't report usage. */
+    private fun estimateTokens(): Long {
+        val characters = fullSystemPrompt.length + history.sumOf { message ->
+            message.content.sumOf { block ->
+                when (block) {
+                    is ContentBlock.Text -> block.text.length
+                    is ContentBlock.ToolUse -> block.input.toString().length
+                    is ContentBlock.ToolResult -> block.content.length
+                }
+            }
+        }
+        return characters / 4L
     }
 
     companion object {
@@ -131,6 +160,8 @@ class Agent (
             still unfinished. Keep exact names, paths, and error messages. Don't call any tools.
             Reply with the summary only.
         """.trimIndent()
+
+        private const val COMPACT_THRESHOLD = 0.75
     }
 }
 

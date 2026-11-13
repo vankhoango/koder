@@ -71,6 +71,12 @@ class Koder: CliktCommand(name="koder") {
         .restrictTo(1..100)
         .default(25)
 
+    private val contextLimit by option(
+        "--context-limit",
+        envvar = "KODER_CONTEXT_LIMIT",
+        help = "The model's context window in tokens. Enables automatic compaction.",
+    ).int().restrictTo(min = 1_000)
+
     override fun run(): Unit = runBlocking {
         val apiKey = System.getenv("KODER_API_KEY") ?:
             throw PrintMessage("KODER_API_KEY is not set", statusCode = 1, printError = true)
@@ -92,7 +98,7 @@ class Koder: CliktCommand(name="koder") {
 
         val llmConfig = LlmConfig(baseUrl, apiKey, model)
         ChatCompletionsClient(llmConfig).use { client ->
-            val agent = Agent(client, registry, SYSTEM_PROMPT, maxSteps) { event ->
+            val agent = Agent(client, registry, SYSTEM_PROMPT, maxSteps, contextLimit = contextLimit) { event ->
                 if (event is AgentEvent.Compacted) fileTracker.clearKnown()
                 printEvent(event)
             }
@@ -158,6 +164,8 @@ private fun printEvent(event: AgentEvent) = when (event) {
     is AgentEvent.StepLimitReached -> println("[step limit of ${event.maxSteps} reached]")
     AgentEvent.Abandoned -> println("(Stopped: the model kept requesting tools after the limit. This exchange isn't saved.)")
     is AgentEvent.Compacted -> println("[conversation compacted into a ${event.summary.length}-character summary]")
+    is AgentEvent.AutoCompacting ->
+        println("[context about ${event.usedTokens * 100 / event.limit}% full: compacting the conversation]")
 }
 
 private fun String.preview(maxLength: Int = 200): String {

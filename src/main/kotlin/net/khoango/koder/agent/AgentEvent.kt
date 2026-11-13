@@ -10,4 +10,6 @@ sealed interface AgentEvent {
     data class StepLimitReached(val maxSteps: Int) : AgentEvent
     data object Abandoned : AgentEvent
     data class Compacted(val summary: String) : AgentEvent
+
+    data class AutoCompacting(val usedTokens: Long, val limit: Int) : AgentEvent
 }

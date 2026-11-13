@@ -139,12 +139,41 @@ class AgentTest {
         assertTrue(events.any { it is AgentEvent.Compacted })
     }
 
-    private fun agent(llm: LlmClient, tools: List<Tool> = emptyList(), maxSteps: Int = 25) =
+    @Test
+    fun `compacts automatically when the context is nearly full`() = runTest {
+        val llm = FakeLlmClient(
+            Message.assistant("First answer"),
+            Message.assistant("Summary of the first exchange."),
+            Message.assistant("Second answer"),
+        )
+        val agent = agent(llm, contextLimit = 10)
+
+        agent.run("First question")
+        agent.run("Second question")
+
+        assertTrue(events.any { it is AgentEvent.AutoCompacting })
+        assertEquals(listOf(Message.user("Second question")), llm.requests.last())
+    }
+
+    @Test
+    fun `does not compact while there is enough room`() = runTest {
+        val llm = FakeLlmClient(Message.assistant("First answer"), Message.assistant("Second answer"))
+        val agent = agent(llm, contextLimit = 1_000)
+
+        agent.run("First question")
+        agent.run("Second question")
+
+        assertTrue(events.none { it is AgentEvent.Compacted })
+        assertEquals(3, llm.requests.last().size)   // the full history was sent
+    }
+
+    private fun agent(llm: LlmClient, tools: List<Tool> = emptyList(), maxSteps: Int = 25, contextLimit: Int? = null) =
         Agent(
             llm,
             ToolRegistry(tools, PermissionPolicy(), askUser = { Answer.YES }),
             "Test system prompt",
             maxSteps,
+            contextLimit,
         ) { events += it }
 
 
