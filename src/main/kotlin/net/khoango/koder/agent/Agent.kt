@@ -14,7 +14,7 @@ import net.khoango.koder.tools.ToolRegistry
 class Agent (
     private val llm: LlmClient,
     private val tools: ToolRegistry,
-    private val systemPrompt: String,
+    var systemPrompt: String,
     private val maxSteps: Int = 25,
     private val contextLimit: Int? = null,
     private val onEvent: (AgentEvent) -> Unit = {},

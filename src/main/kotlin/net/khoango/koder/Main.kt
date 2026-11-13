@@ -22,6 +22,7 @@ import net.khoango.koder.llm.LlmException
 import net.khoango.koder.llm.LlmStreamEvent
 import net.khoango.koder.permissions.Answer
 import net.khoango.koder.permissions.PermissionPolicy
+import net.khoango.koder.prompt.INIT_PROMPT
 import net.khoango.koder.prompt.buildSystemPrompt
 import net.khoango.koder.tools.EditFileTool
 import net.khoango.koder.tools.FileTracker
@@ -106,12 +107,21 @@ class Koder: CliktCommand(name="koder") {
                 if (event is AgentEvent.Compacted) fileTracker.clearKnown()
                 printEvent(event)
             }
-            chatLoop(agent, prompt, fileTracker)
+            chatLoop(agent, prompt, fileTracker) {
+                val reloaded = buildSystemPrompt(SYSTEM_PROMPT, projectRoot)
+                reloaded.memoryFiles.forEach { println("[memory reloaded: $it]") }
+                agent.systemPrompt = reloaded.text
+            }
         }
     }
 }
 
-private suspend fun chatLoop(agent: Agent, firstPrompt: String? = null, fileTracker: FileTracker) {
+private suspend fun chatLoop(
+    agent: Agent,
+    firstPrompt: String? = null,
+    fileTracker: FileTracker,
+    reloadSystemPrompt: () -> Unit,
+) {
     var input = firstPrompt
     while (true) {
         if (input == null) {
@@ -135,6 +145,17 @@ private suspend fun chatLoop(agent: Agent, firstPrompt: String? = null, fileTrac
                     println("[session: ${agent.usage}]")
                 } catch (e: LlmException) {
                     println("Error: ${e.message}")
+                }
+                input = null
+                continue
+            }
+            "/init" -> {
+                try {
+                    agent.run(INIT_PROMPT)
+                    reloadSystemPrompt()
+                    println("[session: ${agent.usage}]")
+                } catch (e: LlmException) {
+                    println("\nError: ${e.message}")
                 }
                 input = null
                 continue

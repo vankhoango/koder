@@ -12,6 +12,22 @@ data class SystemPrompt(val text: String, val memoryFiles: List<Path>)
 private const val MEMORY_FILE_NAME = "KODER.md"
 private const val MAX_MEMORY_CHARS = 20_000
 
+val INIT_PROMPT = """
+    Create a KODER.md file in the project root that will help future sessions work in this project.
+
+    First, explore efficiently: look at the top-level files, the build configuration, and the main
+    source folders. Use find_files and search_text rather than listing every folder one by one.
+
+    Then write KODER.md with:
+    - a short overview of what the project is;
+    - the exact commands to build, test, and run it, for the shell named in the environment;
+    - the directory structure, and where the key code lives;
+    - important conventions you can see in the code.
+
+    Keep it under 60 lines, factual, and specific to this project; don't include generic advice.
+    If KODER.md already exists, read it first and improve it, keeping everything that is still correct.
+""".trimIndent()
+
 fun buildSystemPrompt(base: String, projectRoot: Path): SystemPrompt {
     val isWindows = System.getProperty("os.name").startsWith("Windows")
     var userMemory = Path(System.getProperty("user.home"), ".koder", MEMORY_FILE_NAME)
