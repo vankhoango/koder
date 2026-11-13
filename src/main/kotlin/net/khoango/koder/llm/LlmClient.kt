@@ -7,26 +7,13 @@ import com.openai.errors.OpenAIIoException
 import com.openai.errors.OpenAIServiceException
 import com.openai.models.FunctionDefinition
 import com.openai.models.FunctionParameters
-import com.openai.models.chat.completions.ChatCompletionAssistantMessageParam
-import com.openai.models.chat.completions.ChatCompletionCreateParams
-import com.openai.models.chat.completions.ChatCompletionFunctionTool
-import com.openai.models.chat.completions.ChatCompletionMessageFunctionToolCall
-import com.openai.models.chat.completions.ChatCompletionMessageParam
-import com.openai.models.chat.completions.ChatCompletionMessageToolCall
-import com.openai.models.chat.completions.ChatCompletionSystemMessageParam
-import com.openai.models.chat.completions.ChatCompletionToolMessageParam
-import com.openai.models.chat.completions.ChatCompletionUserMessageParam
-import kotlinx.coroutines.future.await
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonNull
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.booleanOrNull
-import kotlinx.serialization.json.doubleOrNull
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.longOrNull
+import com.openai.models.chat.completions.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.serialization.json.*
 import net.khoango.koder.domain.ContentBlock
 import net.khoango.koder.domain.Message
 import net.khoango.koder.domain.Role
@@ -49,6 +36,11 @@ data class Usage(val inputTokens: Long, val outputTokens: Long) {
 
 data class LlmResponse(val message: Message, val usage: Usage)
 
+sealed interface LlmStreamEvent {
+    data class TextDelta(val text: String) : LlmStreamEvent
+    data class Completed(val response: LlmResponse) : LlmStreamEvent
+}
+
 class LlmClient(private val config: LlmConfig): AutoCloseable {
 
     private val client = OpenAIOkHttpClient.builder()
@@ -56,57 +48,82 @@ class LlmClient(private val config: LlmConfig): AutoCloseable {
         .apiKey(config.apiKey)
         .build()
 
-    suspend fun send(system: String, messages: List<Message>, tools: List<ToolDefinition> = emptyList()): LlmResponse {
+    fun stream(system: String,
+               messages: List<Message>,
+               tools: List<ToolDefinition> = emptyList(),
+    ): Flow<LlmStreamEvent> = flow {
+        val params = buildParams(system, messages, tools).toBuilder()
+            .streamOptions(ChatCompletionStreamOptions.builder().includeUsage(true).build())
+            .build()
+        val text = StringBuilder()
+        val toolCalls = sortedMapOf<Long, ToolCallBuilder>()
+        var usage = Usage.ZERO
 
+        client.chat().completions().createStreaming(params).use { response ->
+            response.stream().iterator().forEach { chunk ->
+                chunk.usage().getOrNull()?.let {
+                    usage = Usage(it.promptTokens(), it.completionTokens())
+                }
+                val delta = chunk.choices().firstOrNull()?.delta() ?: return@forEach
+                delta.content().getOrNull()?.takeIf { it.isNotEmpty() }?.let {
+                    text.append(it)
+                    emit(LlmStreamEvent.TextDelta(it))
+                }
+                delta.toolCalls().getOrNull().orEmpty().forEach { call ->
+                    toolCalls.getOrPut(call.index()) { ToolCallBuilder(call.index()) }.add(call)
+                }
+                val content = buildList {
+                    if (text.isNotEmpty()) add(ContentBlock.Text(text.toString()))
+                    toolCalls.values.forEach { add(it.build()) }
+                }
+                emit(LlmStreamEvent.Completed(LlmResponse(Message(Role.ASSISTANT, content), usage)))
+            }
+        }
+    }
+        .flowOn(Dispatchers.IO)
+        .catch { throw it.toLlmException() }
+
+    private fun buildParams(system: String, messages: List<Message>, tools: List<ToolDefinition>): ChatCompletionCreateParams {
         val systemParam = ChatCompletionMessageParam.ofSystem(
             ChatCompletionSystemMessageParam.builder().content(system).build()
         )
-
-        val params = ChatCompletionCreateParams.builder()
+        return ChatCompletionCreateParams.builder()
             .model(config.model)
             .messages(listOf(systemParam) + messages.flatMap { it.toParams() })
-            .apply {
-                tools.forEach { tool ->
-                    addTool(tool.toSdkTool())
-                }
-            }
+            .apply { tools.forEach { addTool(it.toSdkTool()) } }
             .build()
-
-        try {
-            val completion = client.async().chat().completions().create(params).await()
-            val sdkMessage = completion.choices().firstOrNull()?.message()
-
-            val text = sdkMessage?.content()?.getOrNull().orEmpty()
-            val toolCalls = sdkMessage?.toolCalls()?.getOrNull().orEmpty()
-            val usage = completion.usage().getOrNull()
-
-            val content = buildList {
-                if (text.isNotEmpty()) {
-                    add(ContentBlock.Text(text))
-                }
-                toolCalls.mapNotNull {
-                    it.function().getOrNull()
-                }.forEach {
-                    add(it.toToolUse())
-                }
-            }
-
-            return LlmResponse(
-                Message(Role.ASSISTANT, content),
-                Usage (
-                    usage?.promptTokens() ?: 0L,
-                    usage?.completionTokens() ?: 0L
-                )
-            )
-
-        } catch (e: OpenAIServiceException) {
-            throw LlmException("API error (HTTP ${e.statusCode()}): ${e.message}", e)
-        } catch (e: OpenAIIoException) {
-            throw LlmException("Network error: ${e.message}", e)
-        }
     }
 
     override fun close() = client.close()
+}
+
+private class ToolCallBuilder(private val index: Long) {
+    private var id = ""
+    private var name = ""
+    private val arguments = StringBuilder()
+    private var metadata: JsonObject? = null
+
+    fun add(delta: ChatCompletionChunk.Choice.Delta.ToolCall) {
+        delta.id().getOrNull()?.let { id = it }
+        delta.function().getOrNull()?.let { function ->
+            function.name().getOrNull()?.let { name = it }
+            function.arguments().getOrNull()?.let { arguments.append(it) }
+        }
+        delta._additionalProperties().toJsonObjectOrNull()?.let { metadata = it }
+    }
+
+    fun build() = ContentBlock.ToolUse(
+        id = id.ifEmpty { "call_$index" },   // some local servers omit IDs
+        name = name,
+        input = parseArguments(arguments.toString()),
+        providerMetadata = metadata,
+    )
+}
+
+private fun Throwable.toLlmException(): Throwable = when (this) {
+    is OpenAIServiceException -> LlmException("API error (HTTP ${statusCode()}): $message", this)
+    is OpenAIIoException -> LlmException("Network error: $message", this)
+    else -> this
 }
 
 private fun JsonElement.toJavaValue(): Any? = when (this) {

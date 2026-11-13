@@ -4,6 +4,8 @@ import net.khoango.koder.domain.ContentBlock
 import net.khoango.koder.domain.Message
 import net.khoango.koder.domain.Role
 import net.khoango.koder.llm.LlmClient
+import net.khoango.koder.llm.LlmResponse
+import net.khoango.koder.llm.LlmStreamEvent
 import net.khoango.koder.llm.Usage
 import net.khoango.koder.tools.ToolRegistry
 
@@ -66,12 +68,23 @@ class Agent (
     }
 
     private suspend fun send(turn: MutableList<Message>): Message {
-        val response = llm.send(systemPrompt, turn, tools.definitions)
+        var completed: LlmResponse? = null
+        var hasText = false
+
+        llm.stream(systemPrompt, history + turn, tools.definitions).collect { event ->
+            when (event) {
+                is LlmStreamEvent.TextDelta -> {
+                    hasText = true
+                    onEvent(AgentEvent.TextDelta(event.text))
+                }
+                is LlmStreamEvent.Completed -> completed = event.response
+            }
+        }
+        if (hasText) onEvent(AgentEvent.TextEnd)
+
+        val response = checkNotNull(completed) { "The stream ended without a final response." }
         usage += response.usage
         turn += response.message
-        if (response.message.text.isNotEmpty()) {
-            onEvent(AgentEvent.AssistantText(response.message.text))
-        }
         return response.message
     }
 

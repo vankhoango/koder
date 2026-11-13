@@ -14,9 +14,11 @@ import kotlinx.coroutines.runBlocking
 import net.khoango.koder.agent.Agent
 import net.khoango.koder.agent.AgentEvent
 import net.khoango.koder.domain.ContentBlock
+import net.khoango.koder.domain.Message
 import net.khoango.koder.llm.LlmClient
 import net.khoango.koder.llm.LlmConfig
 import net.khoango.koder.llm.LlmException
+import net.khoango.koder.llm.LlmStreamEvent
 import net.khoango.koder.permissions.Answer
 import net.khoango.koder.permissions.PermissionPolicy
 import net.khoango.koder.tools.EditFileTool
@@ -120,7 +122,7 @@ private suspend fun chatLoop(agent: Agent, firstPrompt: String? = null, fileTrac
                 agent.run(input)
                 println("[session: ${agent.usage}]")
             } catch (e: LlmException) {
-                println("Error: ${e.message}")
+                println("\nError: ${e.message}")
             }
         }
 
@@ -129,7 +131,11 @@ private suspend fun chatLoop(agent: Agent, firstPrompt: String? = null, fileTrac
 }
 
 private fun printEvent(event: AgentEvent) = when (event) {
-    is AgentEvent.AssistantText -> println(event.text)
+    is AgentEvent.TextDelta -> {
+        print(event.text)
+        System.out.flush()
+    }
+    AgentEvent.TextEnd -> println()
     is AgentEvent.ToolCalled -> println("[tool call] ${event.call.name} ${event.call.input}")
     is AgentEvent.ToolFinished -> {
         val label = if (event.result.isError) "tool error" else "tool result"
