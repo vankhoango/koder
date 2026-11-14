@@ -4,6 +4,7 @@ import net.khoango.koder.skills.Skill
 import net.khoango.koder.tools.normalizeLineEndings
 import java.nio.file.Path
 import java.time.LocalDate
+import java.util.concurrent.TimeUnit
 import kotlin.io.path.exists
 import kotlin.io.path.isRegularFile
 import kotlin.io.path.readText
@@ -72,6 +73,8 @@ fun buildSystemPrompt(base: String, projectRoot: Path, skills: List<Skill> = emp
             appendLine("You can't run skills yourself, but when a request clearly matches one, suggest that the user run it.")
             skills.forEach { appendLine("- ${it.name}: ${it.description}") }
         }
+
+        appendLine("- Python command: ${pythonCommand ?: "not installed"}")
     }
 
     return SystemPrompt(text.trimEnd(), loaded)
@@ -83,4 +86,16 @@ private fun readMemory(file: Path): String? {
         if (content.isEmpty()) return null
         if (content.length <= MAX_MEMORY_CHARS) return content
         return content.take(MAX_MEMORY_CHARS) + "\n\n[$MEMORY_FILE_NAME was truncated: it is longer than $MAX_MEMORY_CHARS characters.]"
+}
+
+/** The first working Python command, detected once per run, or null if none works. */
+private val pythonCommand: String? by lazy {
+    listOf("py", "python", "python3").firstOrNull { command ->
+        runCatching {
+            val process = ProcessBuilder(command, "--version").redirectErrorStream(true).start()
+            val finished = process.waitFor(5, TimeUnit.SECONDS)
+            if (!finished) process.destroyForcibly()
+            finished && process.exitValue() == 0 && process.inputStream.bufferedReader().readText().startsWith("Python")
+        }.getOrDefault(false)
+    }
 }

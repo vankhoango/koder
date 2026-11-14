@@ -8,6 +8,7 @@ import kotlin.io.path.Path
 import kotlin.io.path.exists
 import kotlin.io.path.invariantSeparatorsPathString
 import kotlin.io.path.isDirectory
+import kotlin.io.path.isRegularFile
 import kotlin.io.path.listDirectoryEntries
 import kotlin.io.path.name
 import kotlin.io.path.readText
@@ -18,6 +19,7 @@ data class Skill(
     val instructions: String,
     val directory: Path,
     val argumentHint: String? = null,
+    val files: List<String> = emptyList(),
 )
 
 /** Skills that loaded successfully, plus a warning for each one that didn't. */
@@ -64,7 +66,12 @@ internal fun parseSkill(text: String, directory: Path): Result<Skill> = runCatch
     require(description.length <= MAX_DESCRIPTION_LENGTH) { "The description is longer than $MAX_DESCRIPTION_LENGTH characters." }
     require(body.isNotBlank()) { "The skill has no instructions after the frontmatter." }
 
-    Skill(name, description, body, directory, argumentHint = fields["argument-hint"])
+    val files = directory.listDirectoryEntries()
+        .filter { it.isRegularFile() && it.name != "SKILL.md" }
+        .map { it.name }
+        .sorted()
+
+    Skill(name, description, body, directory, argumentHint = fields["argument-hint"], files)
 }
 
 /** Splits "---\nkey: value\n---\nbody" into its fields and its body. Supports simple one-line values only. */
@@ -85,9 +92,12 @@ internal fun parseFrontmatter(text: String): Pair<Map<String, String>, String>? 
 }
 
 
+/** The message sent when the user runs a single skill. */
 fun skillMessage(skill: Skill, projectRoot: Path, argument: String = ""): String =
     skillMessage(listOf(skill), projectRoot, argument)
 
+
+/** The message sent when the user runs one or more skills together. Later skills win in a conflict. */
 /** The message sent when the user runs one or more skills together. Later skills win in a conflict. */
 fun skillMessage(skills: List<Skill>, projectRoot: Path, argument: String = ""): String {
     require(skills.isNotEmpty()) { "At least one skill is needed." }
@@ -106,12 +116,15 @@ fun skillMessage(skills: List<Skill>, projectRoot: Path, argument: String = ""):
             appendLine("The user ran these skills together, in this order: ${skills.joinToString { it.name }}.")
             appendLine("Follow all of their instructions now. If they conflict, follow the skill listed later.")
         }
+
         for (skill in skills) {
+            val filesAttribute = if (skill.files.isEmpty()) "" else " files=\"${skill.files.joinToString()}\""
             appendLine()
-            appendLine("<skill name=\"${skill.name}\" directory=\"${skill.location(projectRoot)}\">")
+            appendLine("<skill name=\"${skill.name}\" directory=\"${skill.location(projectRoot)}\"$filesAttribute>")
             appendLine(skill.instructions.replace(ARGUMENTS_PLACEHOLDER, argument.ifBlank { "(none given)" }))
             appendLine("</skill>")
         }
+
         if (!anyPlaceholder && argument.isNotBlank()) {
             val target = if (skills.size == 1) "this skill" else "these skills"
             appendLine()
@@ -120,9 +133,13 @@ fun skillMessage(skills: List<Skill>, projectRoot: Path, argument: String = ""):
     }.trimEnd()
 }
 
+/** The skill's directory relative to the project root, or its full path if it lives elsewhere. */
 private fun Skill.location(projectRoot: Path): String =
-    if (directory.startsWith(projectRoot)) projectRoot.relativize(directory).invariantSeparatorsPathString
-    else directory.toString()
+    if (directory.startsWith(projectRoot)) {
+        projectRoot.relativize(directory).invariantSeparatorsPathString
+    } else {
+        directory.toString()
+    }
 
 /** One command per skill. Skills whose names clash with existing commands are skipped with a warning. */
 fun skillCommands(app: KoderApp, reservedNames: Set<String>): List<Command> =
