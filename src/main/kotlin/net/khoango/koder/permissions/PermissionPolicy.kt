@@ -6,6 +6,31 @@ import net.khoango.koder.tools.stringParam
 enum class Decision {ALLOW, ASK, DENY}
 enum class Answer { YES, NO, ALWAYS }
 
+private val CHAINING = Regex("""[;&|<>`\n]|\$\(""")
+
+private val PYTHON_SCRIPT = Regex(
+    """(?:py|python|python3)(?:\s+-3)?\s+"?([^\s"]+\.py)"?(?:\s+.*)?""",
+    RegexOption.IGNORE_CASE,
+)
+
+/**
+ * If [command] runs a Python script inside `.koder/skills/` (with any arguments, and nothing chained),
+ * returns the script's normalized path; otherwise null.
+ */
+internal fun skillScriptOf(command: String): String? {
+    if (CHAINING.containsMatchIn(command)) return null
+    val match = PYTHON_SCRIPT.matchEntire(command.trim()) ?: return null
+    val script = match.groupValues[1].replace('\\', '/').removePrefix("./")
+    return script.takeIf { it.startsWith(".koder/skills/") && ".." !in it }
+}
+
+/** Describes what answering "always" would approve for [call], for the permission question. */
+fun alwaysScope(call: ContentBlock.ToolUse): String {
+    if (call.name != "run_command") return "all ${call.name} calls"
+    val command = call.input.stringParam("command").orEmpty()
+    return if (skillScriptOf(command) != null) "this skill script, with any arguments" else "this exact command"
+}
+
 class PermissionPolicy(private val yolo: Boolean = false) {
 
     private val sessionRules = mutableSetOf<String>()
@@ -30,12 +55,11 @@ class PermissionPolicy(private val yolo: Boolean = false) {
         sessionRules += ruleKey(call)
     }
 
-    private fun ruleKey(call: ContentBlock.ToolUse): String =
-        if (call.name == "run_command") {
-            "run_command:" + call.input.stringParam("command").orEmpty().trim()
-        } else {
-            call.name
-        }
+    private fun ruleKey(call: ContentBlock.ToolUse): String {
+        if (call.name != "run_command") return call.name
+        val command = call.input.stringParam("command").orEmpty().trim()
+        return skillScriptOf(command)?.let { "skill-script:$it" } ?: "run_command:$command"
+    }
 
     private fun decideCommand(command: String): Decision {
         if (DANGEROUS.any { it.containsMatchIn(command) }) return Decision.DENY
@@ -52,7 +76,6 @@ class PermissionPolicy(private val yolo: Boolean = false) {
             "./gradlew test", ".\\gradlew test", "./gradlew build", ".\\gradlew build",
         )
         /** Characters that chain commands, redirect output, or substitute values in PowerShell and bash. */
-        private val CHAINING = Regex("""[;&|<>`\n]|\$\(""")
         private val DANGEROUS = listOf(
             Regex("""\b(Format-Volume|Stop-Computer|Restart-Computer|shutdown|format\s+[a-z]:)""", RegexOption.IGNORE_CASE),
             Regex("""\bgit\s+push\b.*(--force|-f\b)""", RegexOption.IGNORE_CASE),

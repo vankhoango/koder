@@ -5,6 +5,7 @@ import net.khoango.koder.domain.ContentBlock
 import net.khoango.koder.domain.Role
 import net.khoango.koder.llm.LlmException
 import net.khoango.koder.permissions.Answer
+import net.khoango.koder.permissions.alwaysScope
 import net.khoango.koder.session.SessionStore
 import kotlin.time.Duration
 
@@ -27,7 +28,7 @@ fun printEvent(event: AgentEvent) = when (event) {
 }
 
 fun askPermission(call: ContentBlock.ToolUse): Answer {
-    val scope = if (call.name == "run_command") "this exact command" else "all ${call.name} calls"
+    val scope = alwaysScope(call)
     print("Allow ${call.name}? [y]es / [a]lways ($scope, this session) / [N]o ")
     System.out.flush()
     return when (readlnOrNull()?.trim()?.lowercase()) {

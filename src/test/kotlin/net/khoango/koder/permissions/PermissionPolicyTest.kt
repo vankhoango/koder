@@ -67,4 +67,31 @@ class PermissionPolicyTest {
         assertEquals(Decision.ALLOW, yoloPolicy.decide(write))
         assertEquals(Decision.DENY, yoloPolicy.decide(format))
     }
+
+    private fun runCommand(text: String) =
+        ContentBlock.ToolUse("id", "run_command", buildJsonObject { put("command", text) })
+
+    @Test
+    fun `always approves a skill script with any arguments`() {
+        policy.allowForSession(runCommand("py .koder/skills/test-report/test_report.py"))
+
+        assertEquals(Decision.ALLOW, command("py .koder/skills/test-report/test_report.py build/test-results/test"))
+        assertEquals(Decision.ALLOW, command("python .koder\\skills\\test-report\\test_report.py"))
+    }
+
+    @Test
+    fun `never treats chained or outside scripts as skill scripts`() {
+        policy.allowForSession(runCommand("py .koder/skills/test-report/test_report.py"))
+
+        assertEquals(Decision.ASK, command("py .koder/skills/test-report/test_report.py; Remove-Item -Recurse src"))
+        assertEquals(Decision.ASK, command("py build/other.py"))
+        assertEquals(Decision.ASK, command("py .koder/skills/../../evil.py"))
+    }
+
+    @Test
+    fun `describes the scope of always`() {
+        assertEquals("this skill script, with any arguments", alwaysScope(runCommand("py .koder/skills/a/b.py --x")))
+        assertEquals("this exact command", alwaysScope(runCommand("py build/other.py")))
+        assertEquals("all write_file calls", alwaysScope(ContentBlock.ToolUse("id", "write_file", buildJsonObject {})))
+    }
 }
