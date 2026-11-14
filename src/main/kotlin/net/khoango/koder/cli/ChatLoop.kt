@@ -47,6 +47,9 @@ class ChatLoop(private val agent: Agent, builtIn: List<Command>) {
 
     private fun printHelp() {
         println("/quit: Exit Koder")
-        commands.forEach { println("/${it.name}: ${it.description}") }
+        commands.forEach { command ->
+            val hint = command.argumentHint?.let { " $it" }.orEmpty()
+            println("/${command.name}$hint: ${command.description}")
+        }
     }
 }

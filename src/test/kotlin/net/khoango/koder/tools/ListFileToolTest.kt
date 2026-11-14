@@ -16,13 +16,13 @@ class ListFileToolTest {
     @TempDir
     lateinit var tempDir: Path
     lateinit var root: Path
-    lateinit var listFileTool: ListFileTool
+    lateinit var listFilesTool: ListFilesTool
 
     @BeforeTest
     fun setUp() {
         root = tempDir.resolve("myproject")
         Files.createDirectory(root)
-        listFileTool = ListFileTool(root)
+        listFilesTool = ListFilesTool(root)
     }
 
     @AfterTest
@@ -37,7 +37,7 @@ class ListFileToolTest {
         Files.createDirectory(root.resolve("directory2"))
         Files.createFile(root.resolve("file1.txt"))
         Files.createFile(root.resolve("file2.txt"))
-        val tool = ListFileTool(root)
+        val tool = ListFilesTool(root)
         val input = buildJsonObject { put("path", "./") }
         val output = tool.execute(input)
         val expected = """

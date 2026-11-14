@@ -1,5 +1,6 @@
 package net.khoango.koder.prompt
 
+import net.khoango.koder.skills.Skill
 import net.khoango.koder.tools.normalizeLineEndings
 import java.nio.file.Path
 import java.time.LocalDate
@@ -34,7 +35,7 @@ val BASE_SYSTEM_PROMPT = """
     Before using tools, check whether the conversation already contains the answer.
 """.trimIndent()
 
-fun buildSystemPrompt(base: String, projectRoot: Path): SystemPrompt {
+fun buildSystemPrompt(base: String, projectRoot: Path, skills: List<Skill> = emptyList()): SystemPrompt {
     val isWindows = System.getProperty("os.name").startsWith("Windows")
     var userMemory = Path(System.getProperty("user.home"), ".koder", MEMORY_FILE_NAME)
     val projectMemory = projectRoot.resolve(MEMORY_FILE_NAME)
@@ -63,6 +64,13 @@ fun buildSystemPrompt(base: String, projectRoot: Path): SystemPrompt {
             appendLine("The contents of $MEMORY_FILE_NAME are included below; you don't need to read the file.")
             appendLine("If these conflict with the personal instructions, follow these.")
             appendLine(it)
+        }
+        if (skills.isNotEmpty()) {
+            appendLine()
+            appendLine("# Skills")
+            appendLine("Skills are saved instructions for specific tasks. The user runs a skill by typing /<name>.")
+            appendLine("You can't run skills yourself, but when a request clearly matches one, suggest that the user run it.")
+            skills.forEach { appendLine("- ${it.name}: ${it.description}") }
         }
     }
 

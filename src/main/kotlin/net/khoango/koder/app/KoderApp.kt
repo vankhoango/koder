@@ -48,7 +48,7 @@ class KoderApp private constructor(
 ) : AutoCloseable {
 
     fun reloadSystemPrompt() {
-        val reloaded = buildSystemPrompt(BASE_SYSTEM_PROMPT, projectRoot)
+        val reloaded = buildSystemPrompt(BASE_SYSTEM_PROMPT, projectRoot, skills)
         reloaded.memoryFiles.forEach { println("[memory reloaded: $it]") }
         agent.systemPrompt = reloaded.text
     }
@@ -71,12 +71,12 @@ class KoderApp private constructor(
             if (settings.yolo) println("⚠ --yolo: all actions are allowed without asking. Dangerous actions are still blocked.")
             val registry = ToolRegistry(tools, PermissionPolicy(settings.yolo), ::askPermission)
 
-            val systemPrompt = buildSystemPrompt(BASE_SYSTEM_PROMPT, projectRoot)
-            systemPrompt.memoryFiles.forEach { println("[memory: $it]") }
-
             val skillResult = loadSkills(projectRoot)
             skillResult.warnings.forEach { println("[warning] $it") }
             if (skillResult.skills.isNotEmpty()) println("[skills: ${skillResult.skills.joinToString { it.name }}]")
+
+            val systemPrompt = buildSystemPrompt(BASE_SYSTEM_PROMPT, projectRoot, skillResult.skills)
+            systemPrompt.memoryFiles.forEach { println("[memory: $it]") }
 
             val resumed = if (settings.resume) resumeLatest(projectRoot) else null
             val sessionStore = resumed?.store ?: SessionStore.newSession(projectRoot)

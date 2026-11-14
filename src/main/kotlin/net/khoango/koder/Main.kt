@@ -17,6 +17,7 @@ import net.khoango.koder.app.StartupException
 import net.khoango.koder.cli.ChatLoop
 import net.khoango.koder.cli.builtInCommands
 import net.khoango.koder.llm.LlmConfig
+import net.khoango.koder.skills.skillCommands
 import kotlin.io.path.Path
 import kotlin.io.path.absolute
 
@@ -56,7 +57,11 @@ class Koder : CliktCommand(name = "koder") {
             throw PrintMessage(e.message ?: "Koder could not start.", statusCode = 1, printError = true)
         }
 
-        app.use { ChatLoop(it.agent, builtInCommands(it)).run(prompt) }
+        app.use {
+            val builtIn = builtInCommands(it)
+            val reserved = builtIn.map { command -> command.name }.toSet() + setOf("help", "quit", "exit")
+            ChatLoop(it.agent, builtIn + skillCommands(it, reserved)).run(prompt)
+        }
     }
 }
 

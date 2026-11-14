@@ -1,9 +1,12 @@
 package net.khoango.koder.skills
 
+import net.khoango.koder.app.KoderApp
+import net.khoango.koder.cli.Command
 import net.khoango.koder.tools.normalizeLineEndings
 import java.nio.file.Path
 import kotlin.io.path.Path
 import kotlin.io.path.exists
+import kotlin.io.path.invariantSeparatorsPathString
 import kotlin.io.path.isDirectory
 import kotlin.io.path.listDirectoryEntries
 import kotlin.io.path.name
@@ -14,6 +17,7 @@ data class Skill(
     val description: String,
     val instructions: String,
     val directory: Path,
+    val argumentHint: String? = null,
 )
 
 /** Skills that loaded successfully, plus a warning for each one that didn't. */
@@ -21,6 +25,11 @@ data class SkillLoadResult(val skills: List<Skill>, val warnings: List<String>)
 
 private val VALID_NAME = Regex("^[a-z0-9]+(-[a-z0-9]+)*$")
 private const val MAX_DESCRIPTION_LENGTH = 1_024
+
+private const val ARGUMENTS_PLACEHOLDER = "\$ARGUMENTS"
+
+private const val MAX_STACKED_CHARS = 30_000
+
 
 /** Loads personal skills first, then project skills, which replace personal skills with the same name. */
 fun loadSkills(projectRoot: Path): SkillLoadResult {
@@ -55,7 +64,7 @@ internal fun parseSkill(text: String, directory: Path): Result<Skill> = runCatch
     require(description.length <= MAX_DESCRIPTION_LENGTH) { "The description is longer than $MAX_DESCRIPTION_LENGTH characters." }
     require(body.isNotBlank()) { "The skill has no instructions after the frontmatter." }
 
-    Skill(name, description, body, directory)
+    Skill(name, description, body, directory, argumentHint = fields["argument-hint"])
 }
 
 /** Splits "---\nkey: value\n---\nbody" into its fields and its body. Supports simple one-line values only. */
@@ -74,3 +83,57 @@ internal fun parseFrontmatter(text: String): Pair<Map<String, String>, String>? 
     val body = lines.drop(end + 2).joinToString("\n").trim()
     return fields to body
 }
+
+
+fun skillMessage(skill: Skill, projectRoot: Path, argument: String = ""): String =
+    skillMessage(listOf(skill), projectRoot, argument)
+
+/** The message sent when the user runs one or more skills together. Later skills win in a conflict. */
+fun skillMessage(skills: List<Skill>, projectRoot: Path, argument: String = ""): String {
+    require(skills.isNotEmpty()) { "At least one skill is needed." }
+
+    val totalSize = skills.sumOf { it.instructions.length }
+    require(totalSize <= MAX_STACKED_CHARS) {
+        "These skills' instructions add up to $totalSize characters, more than the limit of $MAX_STACKED_CHARS."
+    }
+
+    val anyPlaceholder = skills.any { ARGUMENTS_PLACEHOLDER in it.instructions }
+
+    return buildString {
+        if (skills.size == 1) {
+            appendLine("The user ran the skill \"${skills.single().name}\". Follow its instructions now.")
+        } else {
+            appendLine("The user ran these skills together, in this order: ${skills.joinToString { it.name }}.")
+            appendLine("Follow all of their instructions now. If they conflict, follow the skill listed later.")
+        }
+        for (skill in skills) {
+            appendLine()
+            appendLine("<skill name=\"${skill.name}\" directory=\"${skill.location(projectRoot)}\">")
+            appendLine(skill.instructions.replace(ARGUMENTS_PLACEHOLDER, argument.ifBlank { "(none given)" }))
+            appendLine("</skill>")
+        }
+        if (!anyPlaceholder && argument.isNotBlank()) {
+            val target = if (skills.size == 1) "this skill" else "these skills"
+            appendLine()
+            appendLine("The user's input for $target: $argument")
+        }
+    }.trimEnd()
+}
+
+private fun Skill.location(projectRoot: Path): String =
+    if (directory.startsWith(projectRoot)) projectRoot.relativize(directory).invariantSeparatorsPathString
+    else directory.toString()
+
+/** One command per skill. Skills whose names clash with existing commands are skipped with a warning. */
+fun skillCommands(app: KoderApp, reservedNames: Set<String>): List<Command> =
+    app.skills.mapNotNull { skill ->
+        if (skill.name in reservedNames) {
+            println("[warning] The skill '${skill.name}' has the same name as a built-in command, so it is ignored.")
+            null
+        } else {
+            Command(skill.name, "(skill) ${skill.description}", skill.argumentHint) { argument ->
+                println("[skill: ${skill.name}]")
+                app.agent.run(skillMessage(skill, app.projectRoot, argument))
+            }
+        }
+    }
