@@ -17,7 +17,7 @@ import net.khoango.koder.app.StartupException
 import net.khoango.koder.cli.ChatLoop
 import net.khoango.koder.cli.builtInCommands
 import net.khoango.koder.llm.LlmConfig
-import net.khoango.koder.skills.skillCommands
+import net.khoango.koder.cli.skillCommands
 import kotlin.io.path.Path
 import kotlin.io.path.absolute
 

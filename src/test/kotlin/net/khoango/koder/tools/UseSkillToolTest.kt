@@ -17,7 +17,7 @@ class UseSkillToolTest {
     lateinit var root: Path
 
     private val tool by lazy {
-        UseSkillTool(listOf(Skill("code-review", "Review code.", "Files to review: \$ARGUMENTS", root)), root)
+        UseSkillTool(listOf(Skill("code-review", "Review code.", "Files to review: \$ARGUMENTS", root)), root) { _, _ -> "" }
     }
 
     @Test

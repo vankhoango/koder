@@ -12,4 +12,6 @@ sealed interface AgentEvent {
     data class Compacted(val summary: String) : AgentEvent
 
     data class AutoCompacting(val usedTokens: Long, val limit: Int) : AgentEvent
+    data object SubagentStarted : AgentEvent
+    data object SubagentFinished : AgentEvent
 }

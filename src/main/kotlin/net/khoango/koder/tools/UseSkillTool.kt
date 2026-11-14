@@ -7,7 +7,11 @@ import net.khoango.koder.skills.Skill
 import net.khoango.koder.skills.skillMessage
 import java.nio.file.Path
 
-class UseSkillTool(private val skills: List<Skill>, private val projectRoot: Path) : Tool {
+class UseSkillTool(
+    private val skills: List<Skill>,
+    private val projectRoot: Path,
+    private val runSubagent: suspend (skill: Skill, input: String) -> String,
+) : Tool {
 
     override val definition = ToolDefinition(
         name = "use_skill",
@@ -27,6 +31,13 @@ class UseSkillTool(private val skills: List<Skill>, private val projectRoot: Pat
         val skill = skills.find { it.name == name }
             ?: return failure("Unknown skill '$name'. Available skills: ${skills.joinToString { it.name }}.")
 
-        return ToolOutput(skillMessage(skill, projectRoot, input.stringParam("input").orEmpty(), invokedByModel = true))
+        val skillInput = input.stringParam("input").orEmpty()
+
+        if (skill.runInSubagent) {
+            val report = runSubagent(skill, skillInput)
+            return ToolOutput("The skill \"$name\" was carried out by a subagent. Its report:\n\n$report")
+        }
+
+        return ToolOutput(skillMessage(skill, projectRoot, skillInput, invokedByModel = true))
     }
 }

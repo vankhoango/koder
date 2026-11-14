@@ -173,6 +173,11 @@ class Agent (
         return characters / 4L
     }
 
+    /** Adds token usage from work done on this agent's behalf, such as a subagent's requests. */
+    fun addUsage(extra: Usage) {
+        usage += extra
+    }
+
     companion object {
         private val COMPACT_INSTRUCTIONS = """
             Summarize our conversation so far, so that you can continue the work without the full history.

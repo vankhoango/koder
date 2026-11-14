@@ -2,10 +2,12 @@ package net.khoango.koder.app
 
 import net.khoango.koder.agent.Agent
 import net.khoango.koder.agent.AgentEvent
+import net.khoango.koder.agent.SubagentRunner
 import net.khoango.koder.cli.askPermission
 import net.khoango.koder.cli.printEvent
 import net.khoango.koder.cli.printResumed
 import net.khoango.koder.cli.printRetry
+import net.khoango.koder.cli.printSubagentEvent
 import net.khoango.koder.llm.ChatCompletionsClient
 import net.khoango.koder.llm.LlmClient
 import net.khoango.koder.llm.LlmConfig
@@ -45,6 +47,7 @@ class KoderApp private constructor(
     val projectRoot: Path,
     val fileTracker: FileTracker,
     val skills: List<Skill>,
+    val subagents: SubagentRunner,
     private val modelCanUseSkills: Boolean,
     private val client: LlmClient,
 ) : AutoCloseable {
@@ -65,6 +68,8 @@ class KoderApp private constructor(
             skillResult.warnings.forEach { println("[warning] $it") }
             if (skillResult.skills.isNotEmpty()) println("[skills: ${skillResult.skills.joinToString { it.name }}]")
 
+            lateinit var subagents: SubagentRunner
+
             val tools = if (settings.noTools) emptyList() else buildList {
                 add(ReadFileTool(projectRoot, fileTracker))
                 add(ListFilesTool(projectRoot))
@@ -73,7 +78,9 @@ class KoderApp private constructor(
                 add(RunCommandTool(projectRoot))
                 add(FindFilesTool(projectRoot))
                 add(SearchTextTool(projectRoot))
-                if (skillResult.skills.isNotEmpty()) add(UseSkillTool(skillResult.skills, projectRoot))
+                if (skillResult.skills.isNotEmpty()) {
+                    add(UseSkillTool(skillResult.skills, projectRoot) { skill, input -> subagents.run(skill, input) })
+                }
             }
             val modelCanUseSkills = tools.any { it is UseSkillTool }
 
@@ -96,12 +103,22 @@ class KoderApp private constructor(
                 printEvent(event)
             }
 
+            subagents = SubagentRunner(
+                llm = client,
+                tools = registry,
+                projectRoot = projectRoot,
+                systemPrompt = { agent.systemPrompt },
+                maxSteps = settings.maxSteps,
+                onEvent = ::printSubagentEvent,
+                onUsage = { agent.addUsage(it) },
+            )
+
             resumed?.let {
                 agent.restore(it.state)
                 printResumed(it)
             }
 
-            return KoderApp(agent, projectRoot, fileTracker, skillResult.skills, modelCanUseSkills, client)
+            return KoderApp(agent, projectRoot, fileTracker, skillResult.skills, subagents, modelCanUseSkills, client)
         }
 
         private fun resumeLatest(projectRoot: Path): SessionStore.Resumed =

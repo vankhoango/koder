@@ -52,6 +52,17 @@ class ToolRegistry(
             ToolOutput("Tool '${call.name}' failed: ${e::class.simpleName} ${e.message}", isError = true)
         }
 
+    /**
+     * A registry with only the given tools (all tools if [names] is null), minus [excluded].
+     * It shares this registry's permission policy, so session approvals still apply.
+     */
+    fun restrictedTo(names: Set<String>?, excluded: Set<String> = emptySet()): ToolRegistry =
+        ToolRegistry(
+            toolsByName.values.filter { (names == null || it.definition.name in names) && it.definition.name !in excluded },
+            policy,
+            askUser,
+        )
+
     companion object {
         private val DECLINED = ToolOutput(
             "The user declined this action. Ask the user how to proceed, or try a different approach.",

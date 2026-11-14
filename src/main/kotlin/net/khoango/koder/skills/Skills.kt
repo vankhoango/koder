@@ -1,7 +1,5 @@
 package net.khoango.koder.skills
 
-import net.khoango.koder.app.KoderApp
-import net.khoango.koder.cli.Command
 import net.khoango.koder.tools.normalizeLineEndings
 import java.nio.file.Path
 import kotlin.io.path.Path
@@ -20,6 +18,8 @@ data class Skill(
     val directory: Path,
     val argumentHint: String? = null,
     val files: List<String> = emptyList(),
+    val runInSubagent: Boolean = false,
+    val allowedTools: Set<String>? = null,
 )
 
 /** Skills that loaded successfully, plus a warning for each one that didn't. */
@@ -71,7 +71,19 @@ internal fun parseSkill(text: String, directory: Path): Result<Skill> = runCatch
         .map { it.name }
         .sorted()
 
-    Skill(name, description, body, directory, argumentHint = fields["argument-hint"], files)
+    val allowedTools = fields["allowed-tools"]
+        ?.split(',')
+        ?.map { it.trim() }
+        ?.filter { it.isNotEmpty() }
+        ?.toSet()
+
+    Skill(
+        name, description, body, directory,
+        argumentHint = fields["argument-hint"],
+        files = files,
+        runInSubagent = fields["subagent"] == "true",
+        allowedTools = allowedTools,
+    )
 }
 
 /** Splits "---\nkey: value\n---\nbody" into its fields and its body. Supports simple one-line values only. */
@@ -146,16 +158,3 @@ private fun Skill.location(projectRoot: Path): String =
         directory.toString()
     }
 
-/** One command per skill. Skills whose names clash with existing commands are skipped with a warning. */
-fun skillCommands(app: KoderApp, reservedNames: Set<String>): List<Command> =
-    app.skills.mapNotNull { skill ->
-        if (skill.name in reservedNames) {
-            println("[warning] The skill '${skill.name}' has the same name as a built-in command, so it is ignored.")
-            null
-        } else {
-            Command(skill.name, "(skill) ${skill.description}", skill.argumentHint) { argument ->
-                println("[skill: ${skill.name}]")
-                app.agent.run(skillMessage(skill, app.projectRoot, argument))
-            }
-        }
-    }

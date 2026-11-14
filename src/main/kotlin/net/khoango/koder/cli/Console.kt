@@ -25,6 +25,7 @@ fun printEvent(event: AgentEvent) = when (event) {
     is AgentEvent.AutoCompacting ->
         println("[context about ${event.usedTokens * 100 / event.limit}% full: compacting the conversation]")
     is AgentEvent.Compacted -> println("[conversation compacted into a ${event.summary.length}-character summary]")
+    AgentEvent.SubagentStarted, AgentEvent.SubagentFinished -> Unit
 }
 
 fun askPermission(call: ContentBlock.ToolUse): Answer {
@@ -35,6 +36,22 @@ fun askPermission(call: ContentBlock.ToolUse): Answer {
         "y", "yes" -> Answer.YES
         "a", "always" -> Answer.ALWAYS
         else -> Answer.NO
+    }
+}
+
+fun printSubagentEvent(skillName: String, event: AgentEvent) {
+    val prefix = "  [$skillName]"
+    when (event) {
+        AgentEvent.SubagentStarted -> println("[subagent started: $skillName]")
+        AgentEvent.SubagentFinished -> println("[subagent finished: $skillName]")
+        is AgentEvent.ToolCalled -> println("$prefix [tool call] ${event.call.name} ${event.call.input}")
+        is AgentEvent.ToolFinished -> {
+            val label = if (event.result.isError) "tool error" else "tool result"
+            println("$prefix [$label] ${event.result.content.preview()}")
+        }
+        is AgentEvent.StepLimitReached -> println("$prefix [step limit of ${event.maxSteps} reached]")
+        AgentEvent.Abandoned -> println("$prefix (stopped: too many tool steps)")
+        else -> Unit   // streamed text and context events stay hidden
     }
 }
 
