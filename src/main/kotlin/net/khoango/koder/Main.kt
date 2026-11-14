@@ -35,7 +35,7 @@ class Koder : CliktCommand(name = "koder") {
     private val contextLimit by option(
         "--context-limit", envvar = "KODER_CONTEXT_LIMIT",
         help = "The model's context window in tokens. Enables automatic compaction.",
-    ).int().restrictTo(min = 1_000)
+    ).int().restrictTo(min = 1_000).default(16384)
     private val resume by option("--resume", help = "Continue the most recent session in this project").flag()
 
     override fun run(): Unit = runBlocking {

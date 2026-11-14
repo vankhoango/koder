@@ -46,7 +46,7 @@ class PermissionPolicy(private val yolo: Boolean = false) {
     }
 
     private fun baseDecision(call: ContentBlock.ToolUse): Decision = when (call.name) {
-        "read_file", "list_files", "find_files", "search_text" -> Decision.ALLOW
+        "read_file", "list_files", "find_files", "search_text", "use_skill" -> Decision.ALLOW
         "run_command" -> decideCommand(call.input.stringParam("command").orEmpty().trim())
         else -> Decision.ASK
     }

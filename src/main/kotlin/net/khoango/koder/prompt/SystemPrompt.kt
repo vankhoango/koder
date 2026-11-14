@@ -36,7 +36,7 @@ val BASE_SYSTEM_PROMPT = """
     Before using tools, check whether the conversation already contains the answer.
 """.trimIndent()
 
-fun buildSystemPrompt(base: String, projectRoot: Path, skills: List<Skill> = emptyList()): SystemPrompt {
+fun buildSystemPrompt(base: String, projectRoot: Path, skills: List<Skill> = emptyList(), modelCanUseSkills: Boolean = false,): SystemPrompt {
     val isWindows = System.getProperty("os.name").startsWith("Windows")
     var userMemory = Path(System.getProperty("user.home"), ".koder", MEMORY_FILE_NAME)
     val projectMemory = projectRoot.resolve(MEMORY_FILE_NAME)
@@ -69,8 +69,12 @@ fun buildSystemPrompt(base: String, projectRoot: Path, skills: List<Skill> = emp
         if (skills.isNotEmpty()) {
             appendLine()
             appendLine("# Skills")
-            appendLine("Skills are saved instructions for specific tasks. The user runs a skill by typing /<name>.")
-            appendLine("You can't run skills yourself, but when a request clearly matches one, suggest that the user run it.")
+            appendLine("Skills are saved instructions for specific tasks. The user can run one by typing /<name>.")
+            if (modelCanUseSkills) {
+                appendLine("When a request matches a skill's description, call use_skill with its name before you start, and follow its instructions.")
+            } else {
+                appendLine("You can't run skills yourself, but when a request clearly matches one, suggest that the user run it.")
+            }
             skills.forEach { appendLine("- ${it.name}: ${it.description}") }
         }
 

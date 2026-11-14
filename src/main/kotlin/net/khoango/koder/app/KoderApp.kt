@@ -24,6 +24,7 @@ import net.khoango.koder.tools.ReadFileTool
 import net.khoango.koder.tools.RunCommandTool
 import net.khoango.koder.tools.SearchTextTool
 import net.khoango.koder.tools.ToolRegistry
+import net.khoango.koder.tools.UseSkillTool
 import net.khoango.koder.tools.WriteFileTool
 import java.nio.file.Path
 
@@ -44,11 +45,12 @@ class KoderApp private constructor(
     val projectRoot: Path,
     val fileTracker: FileTracker,
     val skills: List<Skill>,
+    private val modelCanUseSkills: Boolean,
     private val client: LlmClient,
 ) : AutoCloseable {
 
     fun reloadSystemPrompt() {
-        val reloaded = buildSystemPrompt(BASE_SYSTEM_PROMPT, projectRoot, skills)
+        val reloaded = buildSystemPrompt(BASE_SYSTEM_PROMPT, projectRoot, skills, modelCanUseSkills)
         reloaded.memoryFiles.forEach { println("[memory reloaded: $it]") }
         agent.systemPrompt = reloaded.text
     }
@@ -59,23 +61,26 @@ class KoderApp private constructor(
         fun start(settings: KoderSettings, projectRoot: Path): KoderApp {
             val fileTracker = FileTracker()
 
-            val tools = if (settings.noTools) emptyList() else listOf(
-                ReadFileTool(projectRoot, fileTracker),
-                ListFilesTool(projectRoot),
-                WriteFileTool(projectRoot, fileTracker),
-                EditFileTool(projectRoot, fileTracker),
-                RunCommandTool(projectRoot),
-                FindFilesTool(projectRoot),
-                SearchTextTool(projectRoot),
-            )
-            if (settings.yolo) println("⚠ --yolo: all actions are allowed without asking. Dangerous actions are still blocked.")
-            val registry = ToolRegistry(tools, PermissionPolicy(settings.yolo), ::askPermission)
-
             val skillResult = loadSkills(projectRoot)
             skillResult.warnings.forEach { println("[warning] $it") }
             if (skillResult.skills.isNotEmpty()) println("[skills: ${skillResult.skills.joinToString { it.name }}]")
 
-            val systemPrompt = buildSystemPrompt(BASE_SYSTEM_PROMPT, projectRoot, skillResult.skills)
+            val tools = if (settings.noTools) emptyList() else buildList {
+                add(ReadFileTool(projectRoot, fileTracker))
+                add(ListFilesTool(projectRoot))
+                add(WriteFileTool(projectRoot, fileTracker))
+                add(EditFileTool(projectRoot, fileTracker))
+                add(RunCommandTool(projectRoot))
+                add(FindFilesTool(projectRoot))
+                add(SearchTextTool(projectRoot))
+                if (skillResult.skills.isNotEmpty()) add(UseSkillTool(skillResult.skills, projectRoot))
+            }
+            val modelCanUseSkills = tools.any { it is UseSkillTool }
+
+            if (settings.yolo) println("⚠ --yolo: all actions are allowed without asking. Dangerous actions are still blocked.")
+            val registry = ToolRegistry(tools, PermissionPolicy(settings.yolo), ::askPermission)
+
+            val systemPrompt = buildSystemPrompt(BASE_SYSTEM_PROMPT, projectRoot, skillResult.skills, modelCanUseSkills)
             systemPrompt.memoryFiles.forEach { println("[memory: $it]") }
 
             val resumed = if (settings.resume) resumeLatest(projectRoot) else null
@@ -96,7 +101,7 @@ class KoderApp private constructor(
                 printResumed(it)
             }
 
-            return KoderApp(agent, projectRoot, fileTracker, skillResult.skills, client)
+            return KoderApp(agent, projectRoot, fileTracker, skillResult.skills, modelCanUseSkills, client)
         }
 
         private fun resumeLatest(projectRoot: Path): SessionStore.Resumed =

@@ -93,13 +93,13 @@ internal fun parseFrontmatter(text: String): Pair<Map<String, String>, String>? 
 
 
 /** The message sent when the user runs a single skill. */
-fun skillMessage(skill: Skill, projectRoot: Path, argument: String = ""): String =
-    skillMessage(listOf(skill), projectRoot, argument)
+fun skillMessage(skill: Skill, projectRoot: Path, argument: String = "", invokedByModel: Boolean = false): String =
+    skillMessage(listOf(skill), projectRoot, argument, invokedByModel)
 
 
 /** The message sent when the user runs one or more skills together. Later skills win in a conflict. */
 /** The message sent when the user runs one or more skills together. Later skills win in a conflict. */
-fun skillMessage(skills: List<Skill>, projectRoot: Path, argument: String = ""): String {
+fun skillMessage(skills: List<Skill>, projectRoot: Path, argument: String = "", invokedByModel: Boolean = false): String {
     require(skills.isNotEmpty()) { "At least one skill is needed." }
 
     val totalSize = skills.sumOf { it.instructions.length }
@@ -111,7 +111,12 @@ fun skillMessage(skills: List<Skill>, projectRoot: Path, argument: String = ""):
 
     return buildString {
         if (skills.size == 1) {
-            appendLine("The user ran the skill \"${skills.single().name}\". Follow its instructions now.")
+            val name = skills.single().name
+            if (invokedByModel) {
+                appendLine("Here are the instructions of the skill \"$name\". Follow them for the current task.")
+            } else {
+                appendLine("The user ran the skill \"$name\". Follow its instructions now.")
+            }
         } else {
             appendLine("The user ran these skills together, in this order: ${skills.joinToString { it.name }}.")
             appendLine("Follow all of their instructions now. If they conflict, follow the skill listed later.")
