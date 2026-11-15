@@ -1,5 +1,9 @@
 package net.khoango.koder.app
 
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import net.khoango.koder.agent.Agent
 import net.khoango.koder.agent.AgentEvent
 import net.khoango.koder.agent.SubagentRunner
@@ -12,6 +16,13 @@ import net.khoango.koder.llm.ChatCompletionsClient
 import net.khoango.koder.llm.LlmClient
 import net.khoango.koder.llm.LlmConfig
 import net.khoango.koder.llm.RetryingLlmClient
+import net.khoango.koder.mcp.ConfigSource
+import net.khoango.koder.mcp.McpClient
+import net.khoango.koder.mcp.McpException
+import net.khoango.koder.mcp.McpServerConfig
+import net.khoango.koder.mcp.McpTool
+import net.khoango.koder.mcp.expandVariables
+import net.khoango.koder.mcp.loadMcpConfig
 import net.khoango.koder.permissions.PermissionPolicy
 import net.khoango.koder.prompt.BASE_SYSTEM_PROMPT
 import net.khoango.koder.prompt.buildSystemPrompt
@@ -25,6 +36,7 @@ import net.khoango.koder.tools.ListFilesTool
 import net.khoango.koder.tools.ReadFileTool
 import net.khoango.koder.tools.RunCommandTool
 import net.khoango.koder.tools.SearchTextTool
+import net.khoango.koder.tools.Tool
 import net.khoango.koder.tools.ToolRegistry
 import net.khoango.koder.tools.UseSkillTool
 import net.khoango.koder.tools.WriteFileTool
@@ -37,6 +49,7 @@ data class KoderSettings(
     val noTools: Boolean,
     val yolo: Boolean,
     val resume: Boolean,
+    val mcpServers: List<McpServerConfig> = emptyList(),
 )
 
 /** A problem that prevents Koder from starting, with a message for the user. */
@@ -50,6 +63,8 @@ class KoderApp private constructor(
     val subagents: SubagentRunner,
     private val modelCanUseSkills: Boolean,
     private val client: LlmClient,
+    private val mcpClients: List<McpClient>,
+    private val scope: CoroutineScope,
 ) : AutoCloseable {
 
     fun reloadSystemPrompt() {
@@ -58,15 +73,35 @@ class KoderApp private constructor(
         agent.systemPrompt = reloaded.text
     }
 
-    override fun close() = client.close()
+    override fun close() {
+        mcpClients.forEach { runCatching { it.close() } }
+        scope.cancel()
+        client.close()
+    }
 
     companion object {
-        fun start(settings: KoderSettings, projectRoot: Path): KoderApp {
+        suspend fun start(
+            settings: KoderSettings,
+            projectRoot: Path,
+            approveProjectServer: (McpServerConfig) -> Boolean = { false },
+        ): KoderApp {
             val fileTracker = FileTracker()
+            val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
             val skillResult = loadSkills(projectRoot)
             skillResult.warnings.forEach { println("[warning] $it") }
             if (skillResult.skills.isNotEmpty()) println("[skills: ${skillResult.skills.joinToString { it.name }}]")
+
+            val mcpConnections = if (settings.noTools) emptyList() else {
+                val config = loadMcpConfig(projectRoot)
+                config.warnings.forEach { println("[warning] $it") }
+
+                // Servers from --mcp replace configured servers with the same name.
+                val servers = (config.servers.associateBy { it.name } + settings.mcpServers.associateBy { it.name }).values
+                servers
+                    .filter { it.source != ConfigSource.PROJECT || approveProjectServer(it) }
+                    .mapNotNull { connectMcpServer(it, scope, projectRoot) }
+            }
 
             lateinit var subagents: SubagentRunner
 
@@ -81,6 +116,7 @@ class KoderApp private constructor(
                 if (skillResult.skills.isNotEmpty()) {
                     add(UseSkillTool(skillResult.skills, projectRoot) { skill, input -> subagents.run(skill, input) })
                 }
+                mcpConnections.forEach { (_, mcpTools) -> addAll(mcpTools) }
             }
             val modelCanUseSkills = tools.any { it is UseSkillTool }
 
@@ -118,7 +154,39 @@ class KoderApp private constructor(
                 printResumed(it)
             }
 
-            return KoderApp(agent, projectRoot, fileTracker, skillResult.skills, subagents, modelCanUseSkills, client)
+            return KoderApp(
+                agent, projectRoot, fileTracker, skillResult.skills, subagents, modelCanUseSkills, client,
+                mcpClients = mcpConnections.map { it.first },
+                scope = scope,
+            )
+        }
+
+        /** Connects one MCP server and lists its tools, or prints a warning and returns null. */
+        private suspend fun connectMcpServer(
+            server: McpServerConfig,
+            scope: CoroutineScope,
+            projectRoot: Path,
+        ): Pair<McpClient, List<Tool>>? {
+            val (expanded, missing) = server.expandVariables()
+            if (missing.isNotEmpty()) {
+                println("[warning] MCP server '${server.name}': these environment variables aren't set: ${missing.joinToString()}")
+            }
+
+            val client = try {
+                McpClient.connect(expanded.command, scope, projectRoot, expanded.env)
+            } catch (e: McpException) {
+                println("[warning] MCP server '${server.name}' was skipped: ${e.message}")
+                return null
+            }
+            return try {
+                val tools = client.listTools().map { McpTool(server.name, client, it) }
+                println("[mcp: ${server.name}: ${tools.joinToString { it.definition.name }}]")
+                client to tools
+            } catch (e: McpException) {
+                client.close()
+                println("[warning] MCP server '${server.name}' was skipped: ${e.message}")
+                null
+            }
         }
 
         private fun resumeLatest(projectRoot: Path): SessionStore.Resumed =

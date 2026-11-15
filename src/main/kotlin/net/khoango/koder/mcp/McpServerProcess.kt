@@ -28,9 +28,13 @@ class McpServerProcess private constructor(
             scope: CoroutineScope,
             workingDirectory: Path? = null,
             shutdownTimeout: Duration = 5.seconds,
+            extraEnvironment: Map<String, String> = emptyMap(),
         ): McpServerProcess {
             val process = ProcessBuilder(command)
-                .apply { workingDirectory?.let { directory(it.toFile()) } }
+                .apply {
+                    workingDirectory?.let { directory(it.toFile()) }
+                    environment().putAll(extraEnvironment)
+                }
                 .redirectError(ProcessBuilder.Redirect.DISCARD)
                 .start()
             return McpServerProcess(

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "demo": {
+      "command": "mcp-demo/.venv/Scripts/python",
+      "args": ["mcp-demo/server.py"]
+    }
+  }
+}

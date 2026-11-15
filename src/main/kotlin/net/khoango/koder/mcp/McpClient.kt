@@ -5,16 +5,20 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.put
 import java.io.IOException
 import java.nio.file.Path
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
 data class McpServerInfo(val name: String, val version: String, val instructions: String?)
 
 data class McpToolInfo(val name: String, val description: String, val inputSchema: JsonObject)
+
+data class McpToolResult(val text: String, val isError: Boolean)
 
 /** A connection to a modern (2026-07-28) MCP server. Every request carries the protocol metadata. */
 class McpClient private constructor(
@@ -23,8 +27,12 @@ class McpClient private constructor(
 ) : AutoCloseable {
 
     /** Sends a request, adding the `_meta` block that every modern request needs. */
-    suspend fun request(method: String, params: JsonObject = JsonObject(emptyMap())): JsonElement =
-        server.connection.request(method, JsonObject(params + ("_meta" to META)))
+    suspend fun request(
+        method: String,
+        params: JsonObject = JsonObject(emptyMap()),
+        timeout: Duration = 30.seconds,
+    ): JsonElement =
+        server.connection.request(method, JsonObject(params + ("_meta" to META)), timeout)
 
     /** Lists all tools the server offers, following pagination. */
     suspend fun listTools(): List<McpToolInfo> {
@@ -47,6 +55,28 @@ class McpClient private constructor(
         return tools
     }
 
+    /** Calls a tool and returns its result as text. Throws [McpException] for protocol errors. */
+    suspend fun callTool(name: String, arguments: JsonObject, timeout: Duration = 60.seconds): McpToolResult {
+        val params = buildJsonObject {
+            put("name", name)
+            put("arguments", arguments)
+        }
+        val result = request("tools/call", params, timeout) as? JsonObject
+            ?: throw McpException("The server's answer to tools/call isn't a JSON object.")
+
+        if ((result["resultType"] as? JsonPrimitive)?.contentOrNull == "input_required") {
+            return McpToolResult("The tool asked for more input from the user, which Koder doesn't support yet.", isError = true)
+        }
+
+        val text = (result["content"] as? JsonArray).orEmpty()
+            .map { describeContent(it) }
+            .filter { it.isNotEmpty() }
+            .joinToString("\n")
+            .ifBlank { result["structuredContent"]?.toString() ?: "(The tool returned no output.)" }
+
+        return McpToolResult(text, isError = (result["isError"] as? JsonPrimitive)?.booleanOrNull ?: false)
+    }
+
     override fun close() = server.close()
 
     private fun parseTool(element: JsonElement): McpToolInfo? {
@@ -57,6 +87,20 @@ class McpClient private constructor(
             description = (tool["description"] as? JsonPrimitive)?.contentOrNull.orEmpty(),
             inputSchema = tool["inputSchema"] as? JsonObject ?: buildJsonObject { put("type", "object") },
         )
+    }
+
+    private fun describeContent(element: JsonElement): String {
+        val item = element as? JsonObject ?: return ""
+        fun field(name: String) = (item[name] as? JsonPrimitive)?.contentOrNull
+        return when (field("type")) {
+            "text" -> field("text").orEmpty()
+            "image" -> "[An image (${field("mimeType") ?: "unknown type"}) was returned, but Koder can't show images to the model yet.]"
+            "audio" -> "[An audio clip was returned, but Koder can't pass audio to the model.]"
+            "resource_link" -> "[Resource: ${field("uri") ?: "unknown"}]"
+            "resource" -> ((item["resource"] as? JsonObject)?.get("text") as? JsonPrimitive)?.contentOrNull
+                ?: "[An embedded resource was returned without text.]"
+            else -> "[Unsupported content type: ${field("type")}]"
+        }
     }
 
     companion object {
@@ -75,9 +119,14 @@ class McpClient private constructor(
         }
 
         /** Starts the server and checks that it speaks [PROTOCOL_VERSION]. Throws [McpException] otherwise. */
-        suspend fun connect(command: List<String>, scope: CoroutineScope, workingDirectory: Path? = null): McpClient {
+        suspend fun connect(
+            command: List<String>,
+            scope: CoroutineScope,
+            workingDirectory: Path? = null,
+            environment: Map<String, String> = emptyMap(),
+        ): McpClient {
             val server = try {
-                McpServerProcess.start(command, scope, workingDirectory)
+                McpServerProcess.start(command, scope, workingDirectory, extraEnvironment = environment)
             } catch (e: IOException) {
                 throw McpException("Could not start the MCP server '${command.joinToString(" ")}': ${e.message}")
             }

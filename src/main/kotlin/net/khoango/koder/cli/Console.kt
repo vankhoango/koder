@@ -4,11 +4,13 @@ import net.khoango.koder.agent.AgentEvent
 import net.khoango.koder.domain.ContentBlock
 import net.khoango.koder.domain.Role
 import net.khoango.koder.llm.LlmException
+import net.khoango.koder.mcp.McpServerConfig
 import net.khoango.koder.permissions.Answer
 import net.khoango.koder.permissions.alwaysScope
 import net.khoango.koder.session.SessionStore
 import kotlin.time.Duration
 
+/** Prints the main agent's events. */
 fun printEvent(event: AgentEvent) = when (event) {
     is AgentEvent.TextDelta -> {
         print(event.text)
@@ -28,17 +30,7 @@ fun printEvent(event: AgentEvent) = when (event) {
     AgentEvent.SubagentStarted, AgentEvent.SubagentFinished -> Unit
 }
 
-fun askPermission(call: ContentBlock.ToolUse): Answer {
-    val scope = alwaysScope(call)
-    print("Allow ${call.name}? [y]es / [a]lways ($scope, this session) / [N]o ")
-    System.out.flush()
-    return when (readlnOrNull()?.trim()?.lowercase()) {
-        "y", "yes" -> Answer.YES
-        "a", "always" -> Answer.ALWAYS
-        else -> Answer.NO
-    }
-}
-
+/** Prints a subagent's events, indented and prefixed with its skill's name. Its streamed text stays hidden. */
 fun printSubagentEvent(skillName: String, event: AgentEvent) {
     val prefix = "  [$skillName]"
     when (event) {
@@ -53,6 +45,27 @@ fun printSubagentEvent(skillName: String, event: AgentEvent) {
         AgentEvent.Abandoned -> println("$prefix (stopped: too many tool steps)")
         else -> Unit   // streamed text and context events stay hidden
     }
+}
+
+/** Asks whether a tool call may run. */
+fun askPermission(call: ContentBlock.ToolUse): Answer {
+    val scope = alwaysScope(call)
+    print("Allow ${call.name}? [y]es / [a]lways ($scope, this session) / [N]o ")
+    System.out.flush()
+    return when (readlnOrNull()?.trim()?.lowercase()) {
+        "y", "yes" -> Answer.YES
+        "a", "always" -> Answer.ALWAYS
+        else -> Answer.NO
+    }
+}
+
+/** Asks whether an MCP server from the project's configuration may be started. */
+fun askToStartProjectServer(server: McpServerConfig): Boolean {
+    println("This project's .koder/mcp.json wants to start the MCP server '${server.name}':")
+    println("  ${server.command.joinToString(" ")}")
+    print("Start it? [y/N] ")
+    System.out.flush()
+    return readlnOrNull()?.trim()?.lowercase() == "y"
 }
 
 fun printRetry(attempt: Int, wait: Duration, error: LlmException) {
