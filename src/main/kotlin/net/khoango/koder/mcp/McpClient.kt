@@ -1,15 +1,7 @@
 package net.khoango.koder.mcp
 
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.booleanOrNull
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.put
-import java.io.IOException
+import kotlinx.serialization.json.*
 import java.nio.file.Path
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
@@ -22,7 +14,7 @@ data class McpToolResult(val text: String, val isError: Boolean)
 
 /** A connection to a modern (2026-07-28) MCP server. Every request carries the protocol metadata. */
 class McpClient private constructor(
-    private val server: McpServerProcess,
+    private val transport: McpTransport,
     val info: McpServerInfo,
 ) : AutoCloseable {
 
@@ -32,7 +24,7 @@ class McpClient private constructor(
         params: JsonObject = JsonObject(emptyMap()),
         timeout: Duration = 30.seconds,
     ): JsonElement =
-        server.connection.request(method, JsonObject(params + ("_meta" to META)), timeout)
+        transport.request(method, JsonObject(params + ("_meta" to META)), timeout)
 
     /** Lists all tools the server offers, following pagination. */
     suspend fun listTools(): List<McpToolInfo> {
@@ -77,7 +69,7 @@ class McpClient private constructor(
         return McpToolResult(text, isError = (result["isError"] as? JsonPrimitive)?.booleanOrNull ?: false)
     }
 
-    override fun close() = server.close()
+    override fun close() = transport.close()
 
     private fun parseTool(element: JsonElement): McpToolInfo? {
         val tool = element as? JsonObject ?: return null
@@ -119,23 +111,21 @@ class McpClient private constructor(
         }
 
         /** Starts the server and checks that it speaks [PROTOCOL_VERSION]. Throws [McpException] otherwise. */
+        /** Starts a local server over stdio and connects to it. */
         suspend fun connect(
             command: List<String>,
             scope: CoroutineScope,
             workingDirectory: Path? = null,
             environment: Map<String, String> = emptyMap(),
-        ): McpClient {
-            val server = try {
-                McpServerProcess.start(command, scope, workingDirectory, extraEnvironment = environment)
-            } catch (e: IOException) {
-                throw McpException("Could not start the MCP server '${command.joinToString(" ")}': ${e.message}")
-            }
+        ): McpClient = connect(StdioTransport.start(command, scope, workingDirectory, environment))
 
+        /** Checks over [transport] that the server speaks [PROTOCOL_VERSION]. Closes the transport and throws otherwise. */
+        suspend fun connect(transport: McpTransport): McpClient {
             val discovered = try {
-                server.connection.request("server/discover", buildJsonObject { put("_meta", META) }, DISCOVER_TIMEOUT)
+                transport.request("server/discover", buildJsonObject { put("_meta", META) }, DISCOVER_TIMEOUT)
                         as? JsonObject
             } catch (e: McpException) {
-                server.close()
+                transport.close()
                 throw if (e.code == UNSUPPORTED_PROTOCOL_VERSION) {
                     McpException("The MCP server doesn't support protocol $PROTOCOL_VERSION. It supports: ${supportedVersions(e.data)}.")
                 } else {
@@ -145,13 +135,13 @@ class McpClient private constructor(
 
             val versions = supportedVersions(discovered?.get("supportedVersions"))
             if (discovered == null || PROTOCOL_VERSION !in versions) {
-                server.close()
+                transport.close()
                 throw legacyServer("its discovery answer doesn't list $PROTOCOL_VERSION")
             }
 
             val serverInfo = (discovered["_meta"] as? JsonObject)?.get("io.modelcontextprotocol/serverInfo") as? JsonObject
             return McpClient(
-                server,
+                transport,
                 McpServerInfo(
                     name = (serverInfo?.get("name") as? JsonPrimitive)?.contentOrNull ?: "unknown",
                     version = (serverInfo?.get("version") as? JsonPrimitive)?.contentOrNull ?: "unknown",
