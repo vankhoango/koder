@@ -24,14 +24,18 @@ import net.khoango.koder.mcp.McpServerConfig
 import kotlin.io.path.Path
 import kotlin.io.path.absolute
 
+/**
+ * Koder's command-line entry point.
+ *
+ * The defaults use Gemini through its OpenAI-compatible API. To use another provider, such as a local
+ * LM Studio server, set the KODER_BASE_URL and KODER_MODEL environment variables, or pass --base-url and --model.
+ */
 class Koder : CliktCommand(name = "koder") {
     private val prompt by argument().optional()
-    private val model by option("--model", envvar = "KODER_MODEL")
-        //.default("gemini-3.5-flash")
-        .default("google/gemma-4-12b-qat")
-    private val baseUrl by option("--base-url", envvar = "KODER_BASE_URL")
-        //.default("https://generativelanguage.googleapis.com/v1beta/openai/")
-        .default("http://192.168.1.60:1234/v1")
+    private val model by option("--model", envvar = "KODER_MODEL", help = "The model to use")
+        .default(DEFAULT_MODEL)
+    private val baseUrl by option("--base-url", envvar = "KODER_BASE_URL", help = "The OpenAI-compatible API's base URL")
+        .default(DEFAULT_BASE_URL)
     private val noTools by option("--no-tools", help = "Don't advertise any tools to the model").flag()
     private val maxSteps by option("--max-steps", help = "Maximum tool steps per request")
         .int()
@@ -86,6 +90,11 @@ class Koder : CliktCommand(name = "koder") {
             }
             McpServerConfig(name, command)
         }
+
+    private companion object {
+        const val DEFAULT_MODEL = "gemini-3.5-flash"
+        const val DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
+    }
 }
 
 fun main(args: Array<String>) = Koder().main(args)

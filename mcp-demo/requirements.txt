@@ -1,0 +1,11 @@
+# Dependencies of Koder's demo MCP server (mcp-demo/server.py).
+#
+# Set up a virtual environment from the project root:
+#   Windows:       py -m venv mcp-demo\.venv
+#                  mcp-demo\.venv\Scripts\python -m pip install -r mcp-demo\requirements.txt
+#   macOS / Linux: python3 -m venv mcp-demo/.venv
+#                  mcp-demo/.venv/bin/python -m pip install -r mcp-demo/requirements.txt
+
+# The official MCP Python SDK. Version 2 speaks the 2026-07-28 protocol that Koder requires;
+# the upper bound protects against breaking changes in a future major version.
+mcp>=2,<3
