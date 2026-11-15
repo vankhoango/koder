@@ -10,7 +10,7 @@ import java.nio.file.SimpleFileVisitor
 import java.nio.file.attribute.BasicFileAttributes
 import kotlin.io.path.name
 
-internal val IGNORED_DIRECTORIES = setOf(".git", ".gradle", ".idea", ".kotlin", "build", "node_modules")
+internal val IGNORED_DIRECTORIES = setOf(".git", ".gradle", ".idea", ".kotlin", "build", "node_modules", ".venv")
 
 internal fun walkProjectFiles(root: Path, onFile: (Path) -> Unit) {
     Files.walkFileTree(root, object : SimpleFileVisitor<Path>() {

@@ -45,3 +45,4 @@ bin/
 .DS_Store
 
 .koder/sessions/
+mcp-demo/.venv/
