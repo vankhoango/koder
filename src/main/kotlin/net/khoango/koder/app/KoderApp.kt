@@ -17,6 +17,7 @@ import net.khoango.koder.llm.LlmClient
 import net.khoango.koder.llm.LlmConfig
 import net.khoango.koder.llm.RetryingLlmClient
 import net.khoango.koder.mcp.ConfigSource
+import net.khoango.koder.mcp.HttpTransport
 import net.khoango.koder.mcp.McpClient
 import net.khoango.koder.mcp.McpException
 import net.khoango.koder.mcp.McpServerConfig
@@ -40,6 +41,8 @@ import net.khoango.koder.tools.Tool
 import net.khoango.koder.tools.ToolRegistry
 import net.khoango.koder.tools.UseSkillTool
 import net.khoango.koder.tools.WriteFileTool
+import java.net.URI
+import java.net.URISyntaxException
 import java.nio.file.Path
 
 data class KoderSettings(
@@ -159,6 +162,17 @@ class KoderApp private constructor(
                 mcpClients = mcpConnections.map { it.first },
                 scope = scope,
             )
+
+        }
+
+        private fun httpUri(url: String): URI {
+            val uri = try {
+                URI(url)
+            } catch (e: URISyntaxException) {
+                throw McpException("'$url' isn't a valid URL.")
+            }
+            if (uri.scheme !in setOf("http", "https")) throw McpException("'$url' must start with http:// or https://.")
+            return uri
         }
 
         /** Connects one MCP server and lists its tools, or prints a warning and returns null. */
@@ -173,11 +187,16 @@ class KoderApp private constructor(
             }
 
             val client = try {
-                McpClient.connect(expanded.command, scope, projectRoot, expanded.env)
+                if (expanded.url != null) {
+                    McpClient.connect(HttpTransport(httpUri(expanded.url), expanded.headers))
+                } else {
+                    McpClient.connect(expanded.command, scope, projectRoot, expanded.env)
+                }
             } catch (e: McpException) {
                 println("[warning] MCP server '${server.name}' was skipped: ${e.message}")
                 return null
             }
+
             return try {
                 val tools = client.listTools().map { McpTool(server.name, client, it) }
                 println("[mcp: ${server.name}: ${tools.joinToString { it.definition.name }}]")

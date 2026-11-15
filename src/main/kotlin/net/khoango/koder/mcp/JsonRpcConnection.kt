@@ -15,6 +15,7 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.longOrNull
@@ -29,6 +30,13 @@ import kotlin.time.Duration.Companion.seconds
 
 /** An error returned by an MCP server, a timeout, or a closed connection. */
 class McpException(message: String, val code: Int? = null, val data: JsonElement? = null) : Exception(message)
+
+/** Turns a JSON-RPC error object into an [McpException]. */
+internal fun mcpExceptionFrom(error: JsonObject) = McpException(
+    (error["message"] as? JsonPrimitive)?.contentOrNull ?: "Unknown error",
+    code = (error["code"] as? JsonPrimitive)?.intOrNull,
+    data = error["data"],
+)
 
 class JsonRpcConnection(input: InputStream, private val output: OutputStream, scope: CoroutineScope) {
 
@@ -111,13 +119,7 @@ class JsonRpcConnection(input: InputStream, private val output: OutputStream, sc
 
         val error = message["error"] as? JsonObject
         if (error != null) {
-            waiting.completeExceptionally(
-                McpException(
-                    (error["message"] as? JsonPrimitive)?.content ?: "Unknown error",
-                    code = (error["code"] as? JsonPrimitive)?.intOrNull,
-                    data = error["data"],
-                )
-            )
+            waiting.completeExceptionally(mcpExceptionFrom(error))
         } else {
             waiting.complete(message["result"] ?: JsonNull)
         }

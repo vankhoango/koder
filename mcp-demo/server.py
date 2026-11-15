@@ -1,5 +1,6 @@
 """A small MCP server for testing Koder's MCP client."""
 from mcp.server.mcpserver import MCPServer
+import sys
 
 mcp = MCPServer("koder-demo")
 
@@ -17,4 +18,7 @@ def word_count(text: str) -> int:
 
 
 if __name__ == "__main__":
-    mcp.run()  # stdio transport by default
+    if "--http" in sys.argv:
+        mcp.run(transport="streamable-http")  # serves http://127.0.0.1:8000/mcp by default
+    else:
+        mcp.run()

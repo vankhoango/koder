@@ -10,41 +10,31 @@ import kotlin.io.path.readText
 
 enum class ConfigSource { USER, PROJECT }
 
-/** One MCP server to connect: a name chosen by the user, the command that starts it, and its environment. */
+/**
+ * One MCP server to connect: a name chosen by the user, and either a command that starts a local server
+ * (with its environment) or the URL of a remote server (with its HTTP headers).
+ */
 data class McpServerConfig(
     val name: String,
-    val command: List<String>,
+    val command: List<String> = emptyList(),
     val env: Map<String, String> = emptyMap(),
     val source: ConfigSource = ConfigSource.USER,
+    val url: String? = null,
+    val headers: Map<String, String> = emptyMap(),
 )
 
 data class McpConfigResult(val servers: List<McpServerConfig>, val warnings: List<String>)
-
-private val VARIABLE = Regex("""\$\{([A-Za-z_][A-Za-z0-9_]*)}""")
-
-/**
- * Replaces `${NAME}` in the server's command and environment with environment variables.
- * Returns the expanded configuration and the names of any missing variables.
- */
-fun McpServerConfig.expandVariables(
-    environment: Map<String, String> = System.getenv(),
-): Pair<McpServerConfig, Set<String>> {
-    val missing = mutableSetOf<String>()
-    fun expand(text: String) = VARIABLE.replace(text) { match ->
-        val name = match.groupValues[1]
-        environment[name] ?: "".also { missing += name }
-    }
-    return copy(command = command.map(::expand), env = env.mapValues { (_, value) -> expand(value) }) to missing
-}
 
 @Serializable
 private data class McpConfigFile(val mcpServers: Map<String, McpServerEntry> = emptyMap())
 
 @Serializable
 private data class McpServerEntry(
-    val command: String,
+    val command: String? = null,
     val args: List<String> = emptyList(),
     val env: Map<String, String> = emptyMap(),
+    val url: String? = null,
+    val headers: Map<String, String> = emptyMap(),
     val disabled: Boolean = false,
 )
 
@@ -83,11 +73,17 @@ fun loadMcpConfig(
                 servers.remove(name)
                 continue
             }
+            if ((entry.command == null) == (entry.url == null)) {
+                warnings += "Skipped MCP server '$name' in $file: it needs either a \"command\" or a \"url\", but not both."
+                continue
+            }
             servers[name] = McpServerConfig(
                 name = name,
-                command = listOf(resolveCommand(entry.command, projectRoot, source)) + entry.args,
+                command = entry.command?.let { listOf(resolveCommand(it, projectRoot, source)) + entry.args }.orEmpty(),
                 env = entry.env,
                 source = source,
+                url = entry.url,
+                headers = entry.headers,
             )
         }
     }
@@ -102,4 +98,26 @@ private fun resolveCommand(command: String, projectRoot: Path, source: ConfigSou
     val hasPath = '/' in command || '\\' in command
     if (!hasPath || source != ConfigSource.PROJECT || Path(command).isAbsolute) return command
     return projectRoot.resolve(command).normalize().toString()
+}
+
+private val VARIABLE = Regex("""\$\{([A-Za-z_][A-Za-z0-9_]*)}""")
+
+/**
+ * Replaces `${NAME}` in the server's command, environment, URL, and headers with environment variables.
+ * Returns the expanded configuration and the names of any missing variables.
+ */
+fun McpServerConfig.expandVariables(
+    environment: Map<String, String> = System.getenv(),
+): Pair<McpServerConfig, Set<String>> {
+    val missing = mutableSetOf<String>()
+    fun expand(text: String) = VARIABLE.replace(text) { match ->
+        val name = match.groupValues[1]
+        environment[name] ?: "".also { missing += name }
+    }
+    return copy(
+        command = command.map(::expand),
+        env = env.mapValues { (_, value) -> expand(value) },
+        url = url?.let(::expand),
+        headers = headers.mapValues { (_, value) -> expand(value) },
+    ) to missing
 }

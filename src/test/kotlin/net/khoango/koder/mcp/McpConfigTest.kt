@@ -75,4 +75,33 @@ class McpConfigTest {
         assertEquals(mapOf("API_KEY" to "k-456", "REGION" to ""), expanded.env)
         assertEquals(setOf("REGION"), missing)
     }
+
+    @Test
+    fun `reads a remote server with headers`() {
+        writeConfig(project, """
+            { "mcpServers": { "tickets": { "type": "http", "url": "https://t.example.com/mcp",
+              "headers": { "Authorization": "Bearer ${'$'}{TOKEN}" } } } }
+        """.trimIndent())
+
+        val server = loadMcpConfig(project, home).servers.single()
+        val (expanded, _) = server.expandVariables(mapOf("TOKEN" to "secret"))
+
+        assertEquals("https://t.example.com/mcp", expanded.url)
+        assertEquals(mapOf("Authorization" to "Bearer secret"), expanded.headers)
+        assertTrue(expanded.command.isEmpty())
+    }
+
+    @Test
+    fun `skips a server with both a command and a url, but keeps the others`() {
+        writeConfig(project, """
+            { "mcpServers": {
+                "broken": { "command": "py", "url": "https://example.com/mcp" },
+                "fine": { "command": "py" } } }
+        """.trimIndent())
+
+        val result = loadMcpConfig(project, home)
+
+        assertEquals(listOf("fine"), result.servers.map { it.name })
+        assertTrue(result.warnings.single().contains("broken"))
+    }
 }

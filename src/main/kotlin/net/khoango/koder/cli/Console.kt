@@ -61,9 +61,10 @@ fun askPermission(call: ContentBlock.ToolUse): Answer {
 
 /** Asks whether an MCP server from the project's configuration may be started. */
 fun askToStartProjectServer(server: McpServerConfig): Boolean {
-    println("This project's .koder/mcp.json wants to start the MCP server '${server.name}':")
-    println("  ${server.command.joinToString(" ")}")
-    print("Start it? [y/N] ")
+    val action = if (server.url != null) "connect to" else "start"
+    println("This project's .koder/mcp.json wants to $action the MCP server '${server.name}':")
+    println("  ${server.url ?: server.command.joinToString(" ")}")
+    print("Allow it? [y/N] ")
     System.out.flush()
     return readlnOrNull()?.trim()?.lowercase() == "y"
 }

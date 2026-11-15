@@ -3,6 +3,15 @@
     "demo": {
       "command": "mcp-demo/.venv/Scripts/python",
       "args": ["mcp-demo/server.py"]
+    },
+    "demo-http": {
+      "type": "http",
+      "url": "http://127.0.0.1:8000/mcp"
+    },
+    "tickets": {
+      "type": "http",
+      "url": "https://tickets.example.com/mcp",
+      "headers": { "Authorization": "Bearer ${TICKETS_TOKEN}" }
     }
   }
 }
