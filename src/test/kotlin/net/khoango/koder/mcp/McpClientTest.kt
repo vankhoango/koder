@@ -1,6 +1,7 @@
 package net.khoango.koder.mcp
 
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.JsonObject
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import kotlin.io.path.Path
 import kotlin.io.path.absolute
@@ -41,5 +42,20 @@ class McpClientTest {
         }
 
         assertContains(error.message.orEmpty(), "Could not start")
+    }
+
+    @Test
+    fun `lists the tools of the demo server`() = runBlocking {
+        assumeTrue(demoPython.exists(), "The demo server's virtual environment isn't set up.")
+
+        McpClient.connect(listOf(demoPython.toString(), demoServer.toString()), this).use { client ->
+            val tools = client.listTools()
+
+            assertEquals(setOf("add", "word_count"), tools.map { it.name }.toSet())
+
+            val add = tools.first { it.name == "add" }
+            assertEquals("Add two whole numbers.", add.description)
+            assertEquals(setOf("a", "b"), (add.inputSchema["properties"] as JsonObject).keys)
+        }
     }
 }
